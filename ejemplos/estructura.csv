@@ -1,15 +1,18 @@
-relacion,origen_id,origen_nombre,origen_tipo,destino_id,capital,voto,detalle
-PARTICIPACION,SOC-A,Inversora del Plata SA,ENTIDAD,CL003,0.55,0.55,
-PARTICIPACION,P-001,Roberto Iglesias,PERSONA,CL003,0.08,0.08,
-PARTICIPACION,P-001,Roberto Iglesias,PERSONA,SOC-A,0.40,0.40,
-PARTICIPACION,P-002,Silvia Marconi,PERSONA,SOC-A,0.60,0.60,
-ADMINISTRACION,P-003,Hector Ledesma,PERSONA,CL003,,,presidente del directorio
-PARTICIPACION,SOC-B,Andes Capital Ltd,ENTIDAD,CL007,0.50,0.50,
-PARTICIPACION,SOC-C,Pacific Holdings BV,ENTIDAD,CL007,0.50,0.50,
-PARTICIPACION,P-004,Marcelo Duarte,PERSONA,SOC-B,0.70,0.70,
-PARTICIPACION,P-004,Marcelo Duarte,PERSONA,SOC-C,0.30,0.30,
-PARTICIPACION,SOC-D,Offshore Nominees Inc,ENTIDAD,SOC-C,0.70,0.70,
-PARTICIPACION,SOC-C,Pacific Holdings BV,ENTIDAD,SOC-D,1.00,1.00,
-PARTICIPACION,P-005,Laura Beltran,PERSONA,CL009,0.05,0.45,acciones preferidas
-PARTICIPACION,P-006,Diego Sanguinetti,PERSONA,CL009,0.35,0.05,
-ADMINISTRACION,P-007,Nora Vidal,PERSONA,CL009,,,gerente general
+relacion,origen_id,origen_nombre,origen_tipo,origen_jurisdiccion,origen_oferta_publica,destino_id,capital,voto,detalle
+PARTICIPACION,SOC-A,Inversora del Plata SA,ENTIDAD,AR,no,CL003,0.55,0.55,
+PARTICIPACION,P-001,Roberto Iglesias,PERSONA,AR,no,CL003,0.08,0.08,
+PARTICIPACION,P-001,Roberto Iglesias,PERSONA,AR,no,SOC-A,0.40,0.40,
+PARTICIPACION,P-002,Silvia Marconi,PERSONA,AR,no,SOC-A,0.60,0.60,
+ADMINISTRACION,P-003,Hector Ledesma,PERSONA,AR,no,CL003,,,presidente del directorio
+PARTICIPACION,SOC-B,Andes Capital Ltd,ENTIDAD,KY,no,CL007,0.50,0.50,
+PARTICIPACION,SOC-C,Pacific Holdings BV,ENTIDAD,NL,no,CL007,0.50,0.50,
+PARTICIPACION,P-004,Marcelo Duarte,PERSONA,AR,no,SOC-B,0.70,0.70,
+PARTICIPACION,P-004,Marcelo Duarte,PERSONA,AR,no,SOC-C,0.30,0.30,
+PARTICIPACION,SOC-D,Offshore Nominees Inc,ENTIDAD,VG,no,SOC-C,0.70,0.70,
+PARTICIPACION,SOC-C,Pacific Holdings BV,ENTIDAD,NL,no,SOC-D,1.00,1.00,
+PARTICIPACION,P-005,Laura Beltran,PERSONA,AR,no,CL009,0.05,0.45,acciones preferidas
+PARTICIPACION,P-006,Diego Sanguinetti,PERSONA,AR,no,CL009,0.35,0.05,
+ADMINISTRACION,P-007,Nora Vidal,PERSONA,AR,no,CL009,,,gerente general
+PARTICIPACION,P-008,Elena Ferrari,PERSONA,ES,no,CL010,0.06,0.06,
+PARTICIPACION,P-009,Tomas Rivas,PERSONA,ES,no,CL010,0.04,0.04,
+PARTICIPACION,P-010,Gustavo Peralta,PERSONA,AR,no,CL011,0.30,0.30,

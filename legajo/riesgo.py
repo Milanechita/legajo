@@ -17,10 +17,14 @@ Dos reglas gobiernan el diseno:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 
 from .beneficiario import Resolucion
-from .matriz import MATRIZ_POR_DEFECTO, NIVELES, REGIMEN, Factor, MatrizRiesgo
+from .matriz import (
+    MATRIZ_POR_DEFECTO, MESES_HASTA_REVISION, NIVELES, REGIMEN, Factor, MatrizRiesgo,
+)
 from .modelo import Caso, Cliente, Estado
+from .pep import PEP, RegistroPEP
 from .screening import Coincidencia
 
 
@@ -38,6 +42,23 @@ class Evaluacion:
     @property
     def desglose(self) -> str:
         return " | ".join(f"{f.codigo}+{f.puntos:g}" for f in self.factores)
+
+    @property
+    def meses_hasta_revision(self) -> int:
+        return MESES_HASTA_REVISION[self.nivel]
+
+    def proxima_revision(self, desde: date | None = None) -> date:
+        """Fecha tope para volver a mirar el legajo.
+
+        La periodicidad sale del nivel de riesgo, no de una agenda aparte.
+        Calcularla aca evita que el plazo y el nivel se desincronicen.
+        """
+        base = desde or date.today()
+        meses = self.meses_hasta_revision
+        anio = base.year + (base.month - 1 + meses) // 12
+        mes = (base.month - 1 + meses) % 12 + 1
+        dia = min(base.day, 28)
+        return date(anio, mes, dia)
 
 
 def _nivel_por_puntaje(puntaje: float, matriz: MatrizRiesgo) -> str:
@@ -199,7 +220,7 @@ def evaluar(
     *,
     resolucion: Resolucion | None = None,
     coincidencias: list[Coincidencia] | None = None,
-    es_pep: bool = False,
+    pep: PEP | None = None,
     canal_no_presencial: bool = False,
     umbral_probable: float = 92.0,
     matriz: MatrizRiesgo = MATRIZ_POR_DEFECTO,
@@ -212,13 +233,16 @@ def evaluar(
     factores += f
     elevadores += e
 
-    if es_pep:
-        factores.append(Factor(
-            "PEP", "CLIENTE",
-            "persona expuesta politicamente, o beneficiario final PEP",
-            matriz.puntos_pep,
-        ))
-        elevadores.append("PEP")
+    if pep is not None:
+        codigo = "PEP_EXTRANJERA" if pep.extranjera else "PEP_NACIONAL"
+        puntos = (
+            matriz.puntos_pep_extranjera if pep.extranjera
+            else matriz.puntos_pep_nacional
+        )
+        if pep.por_parentesco:
+            puntos += matriz.puntos_pep_parentesco
+        factores.append(Factor(codigo, "CLIENTE", pep.descripcion(), puntos))
+        elevadores.append(codigo)
 
     f, e = _factores_geograficos(cliente, matriz)
     factores += f
@@ -260,13 +284,13 @@ def evaluar_casos(
     resoluciones: dict[str, Resolucion],
     coincidencias_por_cliente: dict[str, list[Coincidencia]],
     *,
-    peps: set[str] | None = None,
+    registro_pep: RegistroPEP | None = None,
     umbral_probable: float = 92.0,
     matriz: MatrizRiesgo = MATRIZ_POR_DEFECTO,
     actor: str = "sistema/scoring",
 ) -> dict[str, Evaluacion]:
     """Evalua un lote de casos y registra todo en cada expediente."""
-    peps = peps or set()
+    registro_pep = registro_pep or RegistroPEP()
     resultados: dict[str, Evaluacion] = {}
 
     for caso in casos:
@@ -293,7 +317,7 @@ def evaluar_casos(
             caso.cliente,
             resolucion=resolucion,
             coincidencias=coincidencias_por_cliente.get(cliente_id, []),
-            es_pep=cliente_id in peps,
+            pep=registro_pep.consultar(cliente_id),
             umbral_probable=umbral_probable,
             matriz=matriz,
         )
@@ -306,6 +330,7 @@ def evaluar_casos(
             regimen=evaluacion.regimen,
             factores=[f"{f.codigo}(+{f.puntos:g}): {f.descripcion}" for f in evaluacion.factores],
             elevadores=evaluacion.elevadores,
+            proxima_revision=evaluacion.proxima_revision().isoformat(),
         )
 
         if evaluacion.nivel == "ALTO":

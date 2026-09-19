@@ -13,9 +13,13 @@ from pathlib import Path
 from .beneficiario import resolver
 from .config import POLITICA_POR_DEFECTO, Politica
 from .fuentes.base import Padron
+from .fuentes.descarga import actualizar
 from .fuentes.ofac import ParserOFAC, incorporar_alias
 from .fuentes.onu import ParserONU
-from .io_planilla import agregar_hojas_etapa2, exportar, leer_estructura, leer_padron
+from .fuentes.repet import ParserRePET
+from .io_planilla import (
+    agregar_hojas_etapa2, exportar, leer_estructura, leer_padron, leer_peps,
+)
 from .matriz import MATRIZ_POR_DEFECTO
 from .modelo import Caso, Estado
 from .riesgo import evaluar_casos
@@ -24,6 +28,8 @@ from .screening import screenear
 PARSERS = {
     "SDN.CSV": ParserOFAC(),
     "consolidated.xml": ParserONU(),
+    "repet.json": ParserRePET(),
+    "repet.csv": ParserRePET(),
 }
 
 
@@ -141,17 +147,15 @@ def comando_circuito(args: argparse.Namespace) -> int:
             resoluciones[cliente.cliente_id] = resolver(estructura, cliente.cliente_id)
         print(f"      {len(resoluciones)} estructura(s) analizada(s)")
 
-    peps = set()
-    if args.peps:
-        peps = {
-            linea.strip() for linea in Path(args.peps).read_text(encoding="utf-8").splitlines()
-            if linea.strip() and not linea.startswith("#")
-        }
-        print(f"      {len(peps)} PEP declarado(s)")
+    registro_pep = leer_peps(args.peps) if args.peps else None
+    if registro_pep is not None:
+        vencidas = registro_pep.vencidas()
+        print(f"      {len(registro_pep)} declaracion(es) de PEP", end="")
+        print(f", {len(vencidas)} vencida(s) por el plazo de 2 anios" if vencidas else "")
 
     evaluaciones = evaluar_casos(
         casos, resoluciones, por_cliente,
-        peps=peps,
+        registro_pep=registro_pep,
         umbral_probable=politica.umbral_probable,
         matriz=MATRIZ_POR_DEFECTO,
         actor=args.actor,
@@ -183,6 +187,28 @@ def comando_circuito(args: argparse.Namespace) -> int:
     return 0
 
 
+def comando_actualizar(args: argparse.Namespace) -> int:
+    """Baja las listas desde las fuentes oficiales."""
+    print(f"Descargando listas a {args.listas}\n")
+    resultados = actualizar(args.listas, incluir_opcionales=args.incluir_opcionales)
+
+    for r in resultados:
+        print(f"  {r.resumen()}")
+
+    fallidas = [r for r in resultados if not r.ok]
+    print()
+    if fallidas:
+        print(f"{len(fallidas)} de {len(resultados)} fuentes fallaron.")
+        print("Las listas anteriores quedaron intactas: screenear con una lista")
+        print("vieja es malo, pero screenear con una lista a medias es peor.")
+
+    print("\nRePET no se descarga aca porque no publica un endpoint de datos,")
+    print("solo buscador web en repet.jus.gob.ar. Ver fuentes/repet.py para")
+    print("los dos caminos posibles.")
+
+    return 1 if fallidas else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="legajo",
@@ -206,9 +232,15 @@ def main(argv: list[str] | None = None) -> int:
     cir = sub.add_parser("circuito", help="etapas 1 y 2: screening, beneficiario final y riesgo")
     comunes(cir)
     cir.add_argument("--societaria", help="CSV o XLSX con el grafo societario")
-    cir.add_argument("--peps", help="archivo de texto con un cliente_id PEP por linea")
+    cir.add_argument("--peps", help="CSV de declaraciones juradas de condicion PEP")
     cir.add_argument("--salida", default="informe_circuito.xlsx")
     cir.set_defaults(func=comando_circuito)
+
+    act = sub.add_parser("actualizar-listas", help="bajar las listas desde las fuentes oficiales")
+    act.add_argument("--listas", required=True, help="directorio destino")
+    act.add_argument("--incluir-opcionales", action="store_true",
+                     help="bajar tambien las listas no obligatorias para Argentina")
+    act.set_defaults(func=comando_actualizar)
 
     args = parser.parse_args(argv)
     return args.func(args)

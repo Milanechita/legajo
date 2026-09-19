@@ -100,6 +100,7 @@ class Cliente:
     nacionalidad: str | None = None
     pais_residencia: str | None = None
     actividad: str | None = None
+    oferta_publica: bool = False  # exceptuada de identificar beneficiario final
 
 
 @dataclass

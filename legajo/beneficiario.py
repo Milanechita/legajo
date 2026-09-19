@@ -21,10 +21,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .societaria import Estructura
+from .societaria import Estructura, Nodo
 
-UMBRAL_BENEFICIARIO = 0.10  # Res. UIF 112/2021
+UMBRAL_GENERAL = 0.10  # Res. UIF 112/2021
 PROFUNDIDAD_MAXIMA = 15
+
+
+def umbral_aplicable(nodo: Nodo | None) -> float:
+    """Devuelve el umbral de beneficiario final que corresponde a la entidad.
+
+    El 10% es la regla general, no la unica. Para entidades constituidas o
+    radicadas en el exterior que no hacen oferta publica de sus titulos, el
+    umbral no corresponde y hay que identificar a la totalidad de los
+    beneficiarios.
+
+    Tratar el umbral como una constante deja fuera ese caso, que es
+    justamente el de las estructuras offshore. Como funcion de la entidad, el
+    recorrido no cambia ni una linea: se calcula una vez y el resto del
+    algoritmo ni se entera.
+    """
+    if nodo is None:
+        return UMBRAL_GENERAL
+    if nodo.del_exterior and not nodo.oferta_publica:
+        return 0.0
+    return UMBRAL_GENERAL
 
 
 @dataclass(frozen=True)
@@ -59,11 +79,13 @@ class Resolucion:
     ciclos: list[tuple[str, ...]] = field(default_factory=list)
     titularidad_opaca: float = 0.0
     profundidad_maxima: int = 0
+    umbral_aplicado: float = UMBRAL_GENERAL
+    exceptuada: bool = False
     observaciones: list[str] = field(default_factory=list)
 
     @property
     def identificado(self) -> bool:
-        return bool(self.beneficiarios)
+        return self.exceptuada or bool(self.beneficiarios)
 
     @property
     def niveles_de_capas(self) -> int:
@@ -144,7 +166,7 @@ def _recorrer(
 def resolver(
     estructura: Estructura,
     entidad_id: str,
-    umbral: float = UMBRAL_BENEFICIARIO,
+    umbral: float | None = None,
 ) -> Resolucion:
     """Identifica los beneficiarios finales de una entidad.
 
@@ -155,12 +177,33 @@ def resolver(
          resultado, y dejando constancia de la causa.
     """
     resolucion = Resolucion(entidad_id=entidad_id)
+    nodo = estructura.nodo(entidad_id)
 
     if estructura.es_persona(entidad_id):
         resolucion.observaciones.append(
             "el titular es una persona humana: no corresponde cadena de titularidad"
         )
         return resolucion
+
+    # Una sociedad con oferta publica de sus valores esta sujeta a un regimen
+    # propio de transparencia, y la normativa la exceptua de este requisito.
+    if nodo is not None and nodo.oferta_publica:
+        resolucion.exceptuada = True
+        resolucion.observaciones.append(
+            "sociedad con oferta publica de sus valores: exceptuada de identificar "
+            "beneficiario final, sujeta a acreditar esa condicion"
+        )
+        return resolucion
+
+    if umbral is None:
+        umbral = umbral_aplicable(nodo)
+    resolucion.umbral_aplicado = umbral
+
+    if umbral == 0.0:
+        resolucion.observaciones.append(
+            "entidad del exterior sin oferta publica: no corresponde el umbral del "
+            "10%, se identifica a la totalidad de los beneficiarios"
+        )
 
     acumulado: dict[str, list[float]] = {}
     cadenas: dict[str, list[str]] = {}

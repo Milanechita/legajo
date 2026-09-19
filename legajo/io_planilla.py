@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from .riesgo import Evaluacion
 
 from .modelo import Caso, Cliente, Documento
+from .pep import PEP, RegistroPEP
 from .screening import Coincidencia, ResultadoScreening
 from .societaria import Administracion, Control, Estructura, Nodo, Participacion
 
@@ -35,7 +36,12 @@ _REVISION = PatternFill("solid", start_color="FFF2CC")
 COLUMNAS_PADRON = [
     "cliente_id", "nombre", "tipo", "documento_tipo", "documento_numero",
     "fecha_nacimiento", "nacionalidad", "pais_residencia", "actividad",
+    "oferta_publica",
 ]
+
+
+def _booleano(valor: str) -> bool:
+    return (valor or "").strip().lower() in {"si", "sí", "s", "true", "1", "x", "yes"}
 
 
 def _fila_a_cliente(fila: dict[str, str]) -> Cliente:
@@ -58,6 +64,7 @@ def _fila_a_cliente(fila: dict[str, str]) -> Cliente:
         nacionalidad=opcional("nacionalidad"),
         pais_residencia=opcional("pais_residencia"),
         actividad=opcional("actividad"),
+        oferta_publica=_booleano(fila.get("oferta_publica", "")),
     )
 
 
@@ -86,9 +93,45 @@ def leer_padron(ruta: str | Path) -> list[Cliente]:
 
 
 COLUMNAS_ESTRUCTURA = [
-    "relacion", "origen_id", "origen_nombre", "origen_tipo",
-    "destino_id", "capital", "voto", "detalle",
+    "relacion", "origen_id", "origen_nombre", "origen_tipo", "origen_jurisdiccion",
+    "origen_oferta_publica", "destino_id", "capital", "voto", "detalle",
 ]
+
+COLUMNAS_PEP = ["cliente_id", "tipo", "cargo", "fecha_cese", "por_parentesco"]
+
+
+def leer_peps(ruta: str | Path) -> RegistroPEP:
+    """Lee las declaraciones juradas de condicion PEP.
+
+    Una condicion cesada hace mas de dos anios ya no es PEP, pero el archivo
+    la conserva igual: el dato sirve para el expediente, y borrarlo obligaria
+    a volver a pedirle la declaracion al cliente.
+    """
+    from datetime import datetime
+
+    peps: list[PEP] = []
+    for fila in _leer_tabla(Path(ruta)):
+        cliente_id = (fila.get("cliente_id") or "").strip()
+        if not cliente_id:
+            continue
+
+        cese = None
+        crudo = (fila.get("fecha_cese") or "").strip()
+        if crudo:
+            try:
+                cese = datetime.fromisoformat(crudo.split("T")[0]).date()
+            except ValueError:
+                cese = None
+
+        peps.append(PEP(
+            cliente_id=cliente_id,
+            tipo=(fila.get("tipo") or "NACIONAL").strip().upper() or "NACIONAL",
+            cargo=(fila.get("cargo") or "").strip(),
+            fecha_cese=cese,
+            por_parentesco=_booleano(fila.get("por_parentesco", "")),
+        ))
+
+    return RegistroPEP(peps)
 
 
 def _fraccion(valor: str) -> float:
@@ -110,9 +153,13 @@ def leer_estructura(ruta: str | Path, clientes: list[Cliente] | None = None) -> 
     estructura = Estructura()
 
     for cliente in clientes or []:
-        estructura.agregar_nodo(
-            Nodo(id=cliente.cliente_id, nombre=cliente.nombre, tipo=cliente.tipo)
-        )
+        estructura.agregar_nodo(Nodo(
+            id=cliente.cliente_id,
+            nombre=cliente.nombre,
+            tipo=cliente.tipo,
+            jurisdiccion=(cliente.pais_residencia or "AR").strip().upper() or "AR",
+            oferta_publica=cliente.oferta_publica,
+        ))
 
     for fila in _leer_tabla(Path(ruta)):
         relacion = (fila.get("relacion") or "").strip().upper()
@@ -125,6 +172,8 @@ def leer_estructura(ruta: str | Path, clientes: list[Cliente] | None = None) -> 
             id=origen,
             nombre=(fila.get("origen_nombre") or origen).strip(),
             tipo=(fila.get("origen_tipo") or "PERSONA").strip().upper() or "PERSONA",
+            jurisdiccion=(fila.get("origen_jurisdiccion") or "AR").strip().upper() or "AR",
+            oferta_publica=_booleano(fila.get("origen_oferta_publica", "")),
         ))
 
         detalle = (fila.get("detalle") or "").strip()
@@ -276,36 +325,37 @@ def agregar_hojas_etapa2(
     hoja = libro.create_sheet("Beneficiario final")
     _escribir_encabezado(hoja, [
         "cliente_id", "cliente", "beneficiario", "capital", "voto",
-        "via", "detalle", "niveles", "titularidad_opaca", "observaciones",
+        "via", "detalle", "umbral", "niveles", "titularidad_opaca", "observaciones",
     ])
 
     for cliente_id, r in resoluciones.items():
         obs = "; ".join(r.observaciones)
+        etiqueta = "EXCEPTUADA (oferta publica)" if r.exceptuada else "NO IDENTIFICADO"
         if not r.beneficiarios:
             hoja.append([
-                cliente_id, nombres.get(cliente_id, ""), "NO IDENTIFICADO",
-                None, None, "", "", r.profundidad_maxima,
+                cliente_id, nombres.get(cliente_id, ""), etiqueta,
+                None, None, "", "", r.umbral_aplicado, r.profundidad_maxima,
                 r.titularidad_opaca, obs,
             ])
         for b in r.beneficiarios:
             hoja.append([
                 cliente_id, nombres.get(cliente_id, ""), b.nombre,
-                b.capital, b.voto, b.via, b.detalle,
+                b.capital, b.voto, b.via, b.detalle, r.umbral_aplicado,
                 r.profundidad_maxima, r.titularidad_opaca, obs,
             ])
 
     for fila in hoja.iter_rows(min_row=2):
         for celda in fila:
             celda.font = _CUERPO
-        for idx in (4, 5, 9):  # capital, voto, opaca
+        for idx in (4, 5, 8, 10):  # capital, voto, umbral, opaca
             fila[idx - 1].number_format = "0.00%"
-    _ajustar_anchos(hoja, [12, 26, 26, 10, 10, 14, 46, 9, 16, 46])
+    _ajustar_anchos(hoja, [12, 26, 28, 10, 10, 14, 46, 9, 9, 16, 50])
 
     # --- Riesgo ---
     hoja = libro.create_sheet("Riesgo")
     _escribir_encabezado(hoja, [
         "cliente_id", "cliente", "puntaje", "nivel", "regimen",
-        "elevadores", "factores aplicados",
+        "proxima_revision", "elevadores", "factores aplicados",
     ])
 
     orden = {"ALTO": 0, "MEDIO": 1, "BAJO": 2}
@@ -314,7 +364,7 @@ def agregar_hojas_etapa2(
     ):
         hoja.append([
             cliente_id, nombres.get(cliente_id, ""), ev.puntaje, ev.nivel, ev.regimen,
-            "; ".join(ev.elevadores),
+            ev.proxima_revision().isoformat(), "; ".join(ev.elevadores),
             " | ".join(f"{f.codigo} (+{f.puntos:g}) {f.descripcion}" for f in ev.factores),
         ])
         relleno = _NIVEL_RELLENO.get(ev.nivel)
@@ -322,7 +372,7 @@ def agregar_hojas_etapa2(
             celda.font = _CUERPO
             if relleno:
                 celda.fill = relleno
-    _ajustar_anchos(hoja, [12, 26, 9, 9, 18, 30, 110])
+    _ajustar_anchos(hoja, [12, 26, 9, 9, 18, 16, 30, 110])
 
     libro.save(ruta)
     return ruta

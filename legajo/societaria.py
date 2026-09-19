@@ -22,15 +22,25 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class Nodo:
-    """Una persona humana o una estructura juridica."""
+    """Una persona humana o una estructura juridica.
+
+    `jurisdiccion` y `oferta_publica` no son decorativos: la normativa cambia
+    el umbral de beneficiario final segun esos dos datos. Ver beneficiario.py.
+    """
 
     id: str
     nombre: str
     tipo: str = "PERSONA"  # PERSONA | ENTIDAD
+    jurisdiccion: str = "AR"
+    oferta_publica: bool = False
 
     @property
     def es_persona(self) -> bool:
         return self.tipo == "PERSONA"
+
+    @property
+    def del_exterior(self) -> bool:
+        return self.jurisdiccion.strip().upper() not in {"AR", "ARGENTINA", ""}
 
 
 @dataclass(frozen=True)
@@ -112,6 +122,9 @@ class Estructura:
     def nombre(self, nodo_id: str) -> str:
         nodo = self.nodos.get(nodo_id)
         return nodo.nombre if nodo else nodo_id
+
+    def nodo(self, nodo_id: str) -> Nodo | None:
+        return self.nodos.get(nodo_id)
 
     def es_persona(self, nodo_id: str) -> bool:
         nodo = self.nodos.get(nodo_id)

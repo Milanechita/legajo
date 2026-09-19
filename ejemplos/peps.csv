@@ -1,0 +1,5 @@
+cliente_id,tipo,cargo,fecha_cese,por_parentesco
+CL009,NACIONAL,Legislador provincial,,no
+CL010,EXTRANJERA,Ministro de Estado,,no
+CL011,EXTRANJERA,Direccion de empresa estatal,2019-03-31,no
+CL012,NACIONAL,Conyuge de intendente,,si

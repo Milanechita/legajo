@@ -58,7 +58,9 @@ class MatrizRiesgo:
     puntos_beneficiario_no_identificado: float = 25.0
     puntos_titularidad_opaca: float = 20.0      # escalado por fraccion opaca
     puntos_participacion_circular: float = 15.0
-    puntos_pep: float = 20.0
+    puntos_pep_nacional: float = 20.0
+    puntos_pep_extranjera: float = 35.0
+    puntos_pep_parentesco: float = 10.0   # se suma al tipo que corresponda
 
     # --- Dimension geografica ---
     puntos_jurisdiccion_alto_riesgo: float = 40.0
@@ -84,9 +86,12 @@ class MatrizRiesgo:
     # Condiciones que fijan un piso de nivel sin importar el puntaje. Existen
     # para que ninguna suma de factores bajos pueda dejar en riesgo bajo a un
     # cliente que la normativa considera de riesgo alto por definicion.
+    # PEP_EXTRANJERA esta y PEP_NACIONAL no, y no es un descuido: la
+    # normativa califica de alto riesgo a la PEP extranjera por definicion,
+    # mientras que la nacional se evalua segun su riesgo concreto.
     eleva_a_alto: frozenset[str] = frozenset({
         "COINCIDENCIA_PROBABLE",
-        "PEP",
+        "PEP_EXTRANJERA",
         "BENEFICIARIO_NO_IDENTIFICADO",
         "JURISDICCION_ALTO_RIESGO",
     })
@@ -104,4 +109,13 @@ REGIMEN = {
     "BAJO": "DD_SIMPLIFICADA",
     "MEDIO": "DD_MEDIA",
     "ALTO": "DD_REFORZADA",
+}
+
+# Cada cuanto hay que volver a mirar el legajo, segun el nivel de riesgo.
+# La periodicidad tiene que ser proporcional al riesgo; estos son los plazos
+# que usan los manuales del sector como techo.
+MESES_HASTA_REVISION = {
+    "ALTO": 12,
+    "MEDIO": 36,
+    "BAJO": 60,
 }

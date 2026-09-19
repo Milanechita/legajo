@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from legajo.beneficiario import UMBRAL_BENEFICIARIO, resolver
+from legajo.pep import PEP
+
+from legajo.beneficiario import UMBRAL_GENERAL, resolver
 from legajo.matriz import MATRIZ_POR_DEFECTO, MatrizRiesgo
 from legajo.modelo import Cliente
 from legajo.riesgo import evaluar
@@ -206,13 +208,13 @@ def test_cliente_limpio_es_riesgo_bajo():
     assert ev.regimen == "DD_SIMPLIFICADA"
 
 
-def test_pep_eleva_a_alto_aunque_el_puntaje_no_alcance():
+def test_pep_extranjera_eleva_a_alto_aunque_el_puntaje_no_alcance():
     """El elevador fija un piso. Sin el, esto seria un if disperso."""
     ev = evaluar(cliente(nacionalidad="ARGENTINA", pais_residencia="ARGENTINA",
-                         actividad="Docencia"), es_pep=True)
+                         actividad="Docencia"), pep=PEP("X1", "EXTRANJERA"))
     assert ev.puntaje < MATRIZ_POR_DEFECTO.umbral_alto
     assert ev.nivel == "ALTO"
-    assert "PEP" in ev.elevadores
+    assert "PEP_EXTRANJERA" in ev.elevadores
 
 
 def test_jurisdiccion_de_alto_riesgo_eleva():
@@ -264,10 +266,10 @@ def test_elevador_nunca_baja_el_nivel():
         nombre_designado="A", nombre_matcheado="A", score=99.0, criterio="NOMBRE",
     )
     ev = evaluar(cliente(nacionalidad="IRAN", pais_residencia="IRAN"),
-                 coincidencias=[hit], es_pep=True)
+                 coincidencias=[hit], pep=PEP("X1", "EXTRANJERA"))
     assert ev.nivel == "ALTO"
     assert ev.puntaje > MATRIZ_POR_DEFECTO.umbral_alto
 
 
-def test_umbral_de_la_resolucion_es_diez_por_ciento():
-    assert UMBRAL_BENEFICIARIO == 0.10
+def test_umbral_general_de_la_resolucion_es_diez_por_ciento():
+    assert UMBRAL_GENERAL == 0.10
