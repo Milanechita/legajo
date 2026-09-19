@@ -41,7 +41,11 @@ TRANSICIONES: dict[Estado, frozenset[Estado]] = {
     Estado.ANALISIS: frozenset({Estado.ESPERA_INFO, Estado.ESCALADO, Estado.CERRADO}),
     Estado.ESPERA_INFO: frozenset({Estado.ANALISIS, Estado.ESCALADO}),
     Estado.ESCALADO: frozenset({Estado.CERRADO}),
-    Estado.CERRADO: frozenset(),
+    # CERRADO no es terminal. El legajo se cierra para el alta, pero la debida
+    # diligencia continuada alcanza a todos los clientes y no solo a los de
+    # riesgo alto: una alerta de monitoreo reabre un caso cerrado. Dejarlo
+    # terminal obligaria a no cerrar nunca, que es peor.
+    Estado.CERRADO: frozenset({Estado.ANALISIS}),
 }
 
 

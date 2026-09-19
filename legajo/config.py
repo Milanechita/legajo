@@ -82,3 +82,77 @@ class UmbralesSMVM:
 
 
 UMBRALES = UmbralesSMVM()
+
+
+# ---------------------------------------------------------------------------
+# Parametros de monitoreo transaccional.
+#
+# Igual que la matriz de riesgo: esto es politica, no motor. Las reglas de
+# alertas.py no contienen ningun numero, los leen de aca.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ParametrosMonitoreo:
+    # --- umbral de reporte ---
+    # Lo fija la UIF por resolucion y se actualiza. Sin este numero la regla
+    # de fraccionamiento no corre, y eso es correcto: detectar evasion de un
+    # umbral que no se sabe cual es seria inventar el resultado.
+    umbral_reporte: float = 0.0
+    umbral_vigencia: date | None = None
+
+    # --- desvio del perfil ---
+    tolerancia_desvio: float = 0.25      # cuanto se admite por encima
+    desvio_severo: float = 3.0           # multiplo que eleva la severidad
+
+    # --- fraccionamiento ---
+    ventana_fraccionamiento: int = 7     # dias corridos
+    minimo_operaciones_fraccionadas: int = 3
+    cercania_umbral_severa: float = 0.70  # la mayor a >=70% del umbral
+    piso_fraccionamiento: float = 0.10   # por debajo, no es parte del reparto
+
+    # --- efectivo ---
+    tolerancia_efectivo: float = 0.15
+    efectivo_sin_perfil: float = 0.40    # referencia cuando no hay perfil
+    efectivo_severo: float = 0.75
+
+    # --- aceleracion ---
+    ventana_aceleracion: int = 30        # dias
+    factor_aceleracion: float = 3.0
+    minimo_operaciones_para_linea_base: int = 8
+
+    # --- montos redondos ---
+    multiplo_redondo: float = 100_000.0
+    proporcion_redondos: float = 0.70
+
+    # --- generales ---
+    pais_local: str = "AR"
+    minimo_operaciones_para_exigir_perfil: int = 3
+    jurisdicciones_de_riesgo: frozenset[str] = frozenset()
+
+
+def parametros_con_listas(umbral_reporte: float = 0.0,
+                          umbral_vigencia: date | None = None) -> ParametrosMonitoreo:
+    """Parametros con las jurisdicciones de riesgo ya cargadas desde la matriz.
+
+    Se arma con funcion y no como valor por defecto del dataclass para no
+    importar matriz.py desde aca: config no depende de la matriz, la matriz
+    depende de config.
+    """
+    from .matriz import (
+        JURISDICCIONES_ALTO_RIESGO, JURISDICCIONES_MONITOREO,
+        JURISDICCIONES_NO_COOPERANTES,
+    )
+
+    return ParametrosMonitoreo(
+        umbral_reporte=umbral_reporte,
+        umbral_vigencia=umbral_vigencia,
+        jurisdicciones_de_riesgo=(
+            JURISDICCIONES_ALTO_RIESGO
+            | JURISDICCIONES_MONITOREO
+            | JURISDICCIONES_NO_COOPERANTES
+        ),
+    )
+
+
+PARAMETROS_POR_DEFECTO = ParametrosMonitoreo()

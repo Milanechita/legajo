@@ -1,0 +1,6 @@
+cliente_id,monto_mensual,operaciones_mensuales,proporcion_efectivo,paises,origen_fondos,proposito
+CL001,1500000,5,0.05,Argentina,Actividad comercial,Cobros y pagos de proveedores
+CL005,900000,4,0.10,Argentina,Sueldo en relacion de dependencia,Caja de ahorro
+CL008,2000000,5,0.05,Argentina,Honorarios profesionales,Cuenta operativa
+CL012,2500000,4,0.00,Argentina;Uruguay,Servicios profesionales,Cobros del exterior
+CL014,1400000,4,0.05,Argentina,Comercio minorista,Cuenta comercial

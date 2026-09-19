@@ -4,8 +4,8 @@ Herramienta para automatizar el circuito de análisis PLA/FT. Está pensada para
 equipos de cumplimiento que hoy resuelven el cotejo de listas y el armado del
 legajo con planillas y búsquedas manuales.
 
-**Estado actual: etapas 1 y 2 de 5.** Screening contra listas, resolución de
-beneficiario final y scoring de riesgo.
+**Estado actual: etapas 1, 2 y 3 de 5.** Screening contra listas, resolución de
+beneficiario final, scoring de riesgo y monitoreo transaccional.
 
 ---
 
@@ -35,7 +35,7 @@ ALTA ──▶ SCREENING ──▶ SCORING EBR ──▶ ANÁLISIS ──▶ ┬
 |-------|---------|--------|
 | 1 | Cotejo contra listas OFAC, ONU y RePET | ✅ implementada |
 | 2 | Beneficiario final y scoring EBR | ✅ implementada |
-| 3 | Perfil declarado contra operado real | pendiente |
+| 3 | Perfil declarado contra operado real | ✅ implementada |
 | 4 | Motor de alertas y expediente consolidado | pendiente |
 | 5 | Export e insumo de ROS | pendiente |
 
@@ -57,13 +57,16 @@ python -m legajo screening \
   --listas  ejemplos/listas \
   --salida  informe_screening.xlsx
 
-# Etapas 1 y 2 encadenadas
+# Las tres etapas encadenadas
 python -m legajo circuito \
-  --padron      ejemplos/clientes.csv \
-  --listas      ejemplos/listas \
-  --societaria  ejemplos/estructura.csv \
-  --peps        ejemplos/peps.csv \
-  --salida      informe_circuito.xlsx
+  --padron          ejemplos/clientes.csv \
+  --listas          ejemplos/listas \
+  --societaria      ejemplos/estructura.csv \
+  --peps            ejemplos/peps.csv \
+  --operaciones     ejemplos/operaciones.csv \
+  --perfiles        ejemplos/perfiles.csv \
+  --umbral-reporte  30000000 \
+  --salida          informe_circuito.xlsx
 ```
 
 Salida típica:
@@ -76,11 +79,22 @@ Salida típica:
       5 estructura(s) analizada(s)
       4 declaracion(es) de PEP, 1 vencida(s) por el plazo de 2 anios
 
+[3/3] Monitoreo transaccional
+      119 operacion(es) de 6 cliente(s), 5 perfil(es) declarado(s)
+
   Distribucion de riesgo
-    ALTO       2
-    MEDIO      1
+    ALTO       4
+    MEDIO      2
     BAJO       4
     escalado   5   (no scoreados: coincidencia en lista critica)
+
+  Alertas de monitoreo: 13 sobre 5 cliente(s), 8 de severidad alta
+    DESVIO_PERFIL                  4
+    ACELERACION                    4
+    JURISDICCION_NO_DECLARADA      2
+    FRACCIONAMIENTO                1
+    EFECTIVO_DESPROPORCIONADO      1
+    SIN_PERFIL                     1
 ```
 
 ---
@@ -132,8 +146,8 @@ avisa para que nadie piense que el programa está duplicando.
 
 ## Entrada y salida
 
-Entra CSV o XLSX, sale un XLSX de cinco hojas: Resumen, Coincidencias,
-Expediente, Beneficiario final y Riesgo.
+Entra CSV o XLSX, sale un XLSX de seis hojas: Resumen, Coincidencias,
+Expediente, Beneficiario final, Riesgo y Alertas.
 
 ### Padrón de clientes
 
@@ -164,6 +178,27 @@ CL009,NACIONAL,Legislador provincial,,no
 CL010,EXTRANJERA,Ministro de Estado,,no
 CL011,EXTRANJERA,Direccion de empresa estatal,2019-03-31,no
 CL012,NACIONAL,Conyuge de intendente,,si
+```
+
+### Operatoria
+
+Una fila por operación. Los montos aceptan `1234.56`, `1.234,56` y `$ 1.234,56`.
+
+```
+cliente_id,fecha,monto,sentido,instrumento,canal,contraparte,pais_contraparte,referencia
+CL005,2026-05-11,28400000,INGRESO,EFECTIVO,PRESENCIAL,Deposito por ventanilla,Argentina,
+CL012,2026-07-08,3200000,EGRESO,TRANSFERENCIA,ELECTRONICO,Panama Trade SA,Islas Vírgenes Británicas,
+```
+
+### Perfiles transaccionales
+
+Lo que el cliente declaró al alta. Los países esperados se normalizan a ISO
+igual que en el resto del sistema.
+
+```
+cliente_id,monto_mensual,operaciones_mensuales,proporcion_efectivo,paises,origen_fondos,proposito
+CL005,900000,4,0.10,Argentina,Sueldo en relacion de dependencia,Caja de ahorro
+CL012,2500000,4,0.00,Argentina;Uruguay,Servicios profesionales,Cobros del exterior
 ```
 
 ---
@@ -358,6 +393,95 @@ Guardarlos igual que la norma significa que al actualizar el salario los
 montos se recalculan solos, en vez de quedar tres valores desfasados en
 lugares distintos.
 
+### Las reglas de monitoreo son datos, no ramas del motor
+
+Los motores de reglas se pudren siempre igual: una función por tipología, cada
+una recorriendo las operaciones a su manera, y a los seis meses nadie puede
+decir qué dispara qué. El equipo deja de tocarlo y las tipologías nuevas no se
+incorporan nunca.
+
+Acá una regla es una entrada del catálogo con forma uniforme. El motor recorre
+el catálogo y no sabe qué hace ninguna. Agregar una tipología es agregar una
+línea al final.
+
+### Las ventanas deslizantes se calculan una sola vez
+
+El fraccionamiento necesita "N operaciones en D días". Si cada regla arma su
+propia ventana, se recorre la operatoria una vez por regla y cada una define
+"ventana de siete días" a su manera. Se calculan en `Operatoria` con dos
+punteros sobre la lista ya ordenada, y las reglas las consumen.
+
+### Una regla puede estar apagada, y hay que decir por qué
+
+`MONTOS_REDONDOS` es una tipología real: la operatoria genuina deja decimales,
+la armada usa cifras redondas. En Argentina dispara sobre operatoria normal,
+porque por el orden de magnitud nominal los importes redondos son
+culturalmente comunes.
+
+Queda en el catálogo, apagada, con el motivo escrito al lado. Una regla
+ruidosa entrena al analista a cerrar alertas sin leerlas, y a partir de ahí el
+sistema entero deja de servir. Activarla después de calibrar el múltiplo
+contra la operatoria propia.
+
+### Dos condiciones hacen que algo sea fraccionamiento
+
+La primera es obvia: cada operación tiene que estar individualmente por debajo
+del umbral de reporte. Si una sola lo supera, esa operación se reporta igual y
+no hubo evasión del control.
+
+La segunda apareció probando con datos. Sin ella, un pago de haberes de
+noventa mil pesos que caía dentro de la ventana entraba en la alerta de
+fraccionamiento de treinta millones. Nadie fracciona una suma grande en
+depósitos diminutos, porque necesitaría cientos. Las operaciones por debajo
+del 10% del umbral no forman parte del reparto.
+
+Hay un tercer detalle que también salió de correr el motor: una ventana
+corrida un día es la misma agrupación vista de nuevo, no un patrón distinto.
+Sin deduplicar, un grupo de cinco depósitos generaba tres alertas anidadas.
+
+### La recalibración del perfil se sugiere y nunca se aplica
+
+La normativa admite ajustar el perfil según las operaciones efectivamente
+realizadas. Eso tiene una trampa evidente: si el perfil se ajusta solo hacia
+arriba cada vez que el cliente opera de más, el desvío desaparece justo en el
+momento en que empieza a importar.
+
+El sistema calcula el perfil que reflejaría la operatoria real y lo ofrece.
+Aplicarlo es decisión de una persona.
+
+### El desvío reporta el peor mes, no el promedio
+
+Promediar todo el período diluye exactamente el mes que hay que mirar. Un
+cliente que operó dentro de lo declarado once meses y disparó el doceavo tiene
+un promedio tranquilo y un problema.
+
+### Sin umbral de reporte, la regla de fraccionamiento no corre
+
+Lo fija la UIF por resolución y se actualiza. Detectar la evasión de un umbral
+que no se sabe cuál es sería inventar el resultado. La corrida avisa que la
+regla no corrió en vez de simular que no encontró nada.
+
+### El registro de alertas replica el mínimo normativo
+
+Las columnas de la hoja Alertas no son arbitrarias. Los manuales del sector
+fijan qué debe contener el registro de operaciones inusuales: nivel de riesgo
+del cliente, perfil, identificación de la operación, metodología de detección,
+procedencia y fecha de la alerta, tipo de inusualidad, medidas adoptadas y
+decisión final motivada.
+
+Las seis primeras las completa el sistema. Las dos últimas salen vacías, y eso
+es deliberado: las resuelve el analista, y prellenarlas sería fingir un
+análisis que no ocurrió.
+
+### CERRADO dejó de ser un estado terminal
+
+La Etapa 2 cierra los casos de riesgo bajo, pero la debida diligencia
+continuada alcanza a todos los clientes y no solo a los de riesgo alto. En la
+operatoria real un legajo se cierra para el alta y una alerta de monitoreo lo
+reabre.
+
+La alternativa era no cerrar nunca ningún caso, que es peor.
+
 ### Entra y sale por Excel
 
 El equipo de cumplimiento trabaja en Excel. Una herramienta que lo obligue a
@@ -399,6 +523,8 @@ legajo/
 ├── pep.py             tipificación y vigencia de la condición PEP
 ├── matriz.py          política de riesgo: factores, elevadores, periodicidad
 ├── riesgo.py          evaluador EBR
+├── operaciones.py     operatoria, perfil transaccional y ventanas
+├── alertas.py         catálogo de tipologías y motor de monitoreo
 ├── io_planilla.py     lectura CSV/XLSX y export a Excel
 ├── cli.py             interfaz de línea de comandos
 └── fuentes/
@@ -422,7 +548,7 @@ que auditar, versionar y justificar. La única dependencia del proyecto es
 python -m pytest tests/ -q
 ```
 
-Son 96 y están escritas como escenarios de dominio, no como pruebas de
+Son 127 y están escritas como escenarios de dominio, no como pruebas de
 funciones sueltas. Las que importan:
 
 - El umbral del 10% se aplica a la suma de caminos y no a cada arista
@@ -445,6 +571,15 @@ funciones sueltas. Las que importan:
 - Un país sin normalizar genera su propio factor en vez de pasar como bajo riesgo
 - El 35% de RePET es de origen local y no está en ninguna otra lista
 - Las bajas del registro se excluyen del cotejo
+- Cinco depósitos bajo el umbral en una semana se detectan como fraccionamiento
+- Una sola operación grande no es fraccionamiento: se reporta igual
+- Cuatrocientos depósitos chicos tampoco lo son
+- Una ventana corrida un día no genera una alerta nueva
+- El desvío del perfil reporta el peor mes y no el promedio
+- Operar dentro del perfil declarado no genera ninguna alerta
+- La recalibración del perfil se sugiere sin modificar el original
+- Una regla apagada no corre pero explica por qué
+- Una alerta reabre un legajo cerrado
 
 ---
 
@@ -459,6 +594,7 @@ funciones sueltas. Las que importan:
 - **Decreto 918/2012 y 489/2019**, creación del RePET
 - **Decreto 862/2019**, texto según **Decreto 398/2026**, jurisdicciones no
   cooperantes a fines de transparencia fiscal
+- **Res. UIF 199/2024**, operaciones inusuales y sospechosas
 - **Recomendaciones GAFI**, enfoque basado en riesgo
 
 ---
@@ -486,6 +622,12 @@ Lo que conviene saber antes de usarla:
 - Las listas de `matriz.py` están al plenario GAFI del 19 de junio de 2026 y
   al Decreto 398/2026. Hay que actualizarlas después de cada plenario
 - El SMVM está al valor de septiembre de 2026. Se fija dos veces al año
+- El umbral de reporte se pasa por parámetro y no viene cargado. Lo fija la
+  UIF por resolución y hay que tomarlo de la vigente
+- El monitoreo trabaja sobre la operatoria que se le da. No se conecta a
+  ningún core bancario: la extracción es responsabilidad de quien lo use
+- La triangulación de fondos entre cuentas vinculadas no está implementada.
+  Necesita el grafo de contrapartes, que es material de la Etapa 4
 - La condición de PEP se toma de declaraciones juradas. No hay cotejo
   automático contra un registro de PEP porque en Argentina no existe uno
   público consolidado

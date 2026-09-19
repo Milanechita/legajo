@@ -17,10 +17,13 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 if TYPE_CHECKING:
+    from .alertas import Alerta
     from .beneficiario import Resolucion
     from .riesgo import Evaluacion
 
 from .modelo import Caso, Cliente, Documento
+from .operaciones import Operacion, Perfil
+from .paises import iso
 from .pep import PEP, RegistroPEP
 from .screening import Coincidencia, ResultadoScreening
 from .societaria import Administracion, Control, Estructura, Nodo, Participacion
@@ -373,6 +376,181 @@ def agregar_hojas_etapa2(
             if relleno:
                 celda.fill = relleno
     _ajustar_anchos(hoja, [12, 26, 9, 9, 18, 16, 30, 110])
+
+    libro.save(ruta)
+    return ruta
+
+
+COLUMNAS_OPERACIONES = [
+    "cliente_id", "fecha", "monto", "sentido", "instrumento", "canal",
+    "contraparte", "pais_contraparte", "referencia",
+]
+
+COLUMNAS_PERFILES = [
+    "cliente_id", "monto_mensual", "operaciones_mensuales",
+    "proporcion_efectivo", "paises", "origen_fondos", "proposito",
+]
+
+
+def _fecha_iso(crudo: str):
+    from datetime import datetime
+    texto = (crudo or "").strip()
+    if not texto:
+        return None
+    for formato in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(texto.split(" ")[0], formato).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _numero(crudo: str) -> float:
+    """Acepta 1234.56, 1.234,56 y $ 1.234,56."""
+    texto = (crudo or "").strip().replace("$", "").replace(" ", "")
+    if not texto:
+        return 0.0
+    if "," in texto and "." in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+    elif "," in texto:
+        texto = texto.replace(",", ".")
+    try:
+        return float(texto)
+    except ValueError:
+        return 0.0
+
+
+def leer_operaciones(ruta: str | Path) -> list[Operacion]:
+    """Lee la operatoria. Una fila por operacion."""
+    operaciones: list[Operacion] = []
+    for fila in _leer_tabla(Path(ruta)):
+        cliente_id = (fila.get("cliente_id") or "").strip()
+        fecha = _fecha_iso(fila.get("fecha", ""))
+        monto = abs(_numero(fila.get("monto", "")))
+        if not cliente_id or fecha is None or monto <= 0:
+            continue
+
+        operaciones.append(Operacion(
+            cliente_id=cliente_id,
+            fecha=fecha,
+            monto=monto,
+            sentido=(fila.get("sentido") or "INGRESO").strip().upper() or "INGRESO",
+            instrumento=(fila.get("instrumento") or "TRANSFERENCIA").strip().upper()
+                        or "TRANSFERENCIA",
+            canal=(fila.get("canal") or "ELECTRONICO").strip().upper() or "ELECTRONICO",
+            contraparte=(fila.get("contraparte") or "").strip(),
+            pais_contraparte=(fila.get("pais_contraparte") or "").strip(),
+            referencia=(fila.get("referencia") or "").strip(),
+        ))
+    return operaciones
+
+
+def leer_perfiles(ruta: str | Path) -> dict[str, Perfil]:
+    """Lee los perfiles transaccionales declarados.
+
+    Los paises esperados se normalizan a ISO al entrar, igual que en el resto
+    del sistema. Si el perfil dice "Uruguay" y la operacion dice "UY", tienen
+    que ser lo mismo.
+    """
+    perfiles: dict[str, Perfil] = {}
+    for fila in _leer_tabla(Path(ruta)):
+        cliente_id = (fila.get("cliente_id") or "").strip()
+        if not cliente_id:
+            continue
+
+        crudos = [p.strip() for p in (fila.get("paises") or "").split(";") if p.strip()]
+        paises = tuple(c for c in (iso(p) for p in crudos) if c)
+
+        perfiles[cliente_id] = Perfil(
+            cliente_id=cliente_id,
+            monto_mensual=_numero(fila.get("monto_mensual", "")),
+            operaciones_mensuales=int(_numero(fila.get("operaciones_mensuales", ""))),
+            proporcion_efectivo=_fraccion(fila.get("proporcion_efectivo", "")),
+            paises=paises,
+            origen_fondos=(fila.get("origen_fondos") or "").strip(),
+            proposito=(fila.get("proposito") or "").strip(),
+        )
+    return perfiles
+
+
+_SEVERIDAD_RELLENO = {
+    "ALTA": PatternFill("solid", start_color="F4B6B0"),
+    "MEDIA": PatternFill("solid", start_color="FFE599"),
+    "BAJA": PatternFill("solid", start_color="E8E8E8"),
+}
+
+
+def agregar_hoja_alertas(
+    ruta: str | Path,
+    alertas_por_cliente: dict[str, list["Alerta"]],
+    casos: list[Caso],
+    evaluaciones: dict[str, "Evaluacion"],
+    perfiles: dict[str, Perfil],
+) -> Path:
+    """Escribe el registro de operaciones inusuales.
+
+    Las columnas no son arbitrarias: replican el contenido minimo que los
+    manuales del sector exigen para este registro. Las dos ultimas salen
+    vacias porque las completa el analista al resolver la alerta, y
+    prellenarlas seria fingir un analisis que no ocurrio.
+    """
+    ruta = Path(ruta)
+    libro = load_workbook(ruta)
+    nombres = {c.cliente.cliente_id: c.cliente.nombre for c in casos}
+
+    hoja = libro.create_sheet("Alertas")
+    columnas = [
+        "cliente_id", "cliente", "nivel_riesgo", "perfil_declarado",
+        "tipo_inusualidad", "severidad", "descripcion", "monto_involucrado",
+        "operaciones", "metodologia", "generada", "vence",
+        "medidas_adoptadas", "decision_final",
+    ]
+    _escribir_encabezado(hoja, columnas)
+
+    orden = {"ALTA": 0, "MEDIA": 1, "BAJA": 2}
+    filas = [
+        (cid, a)
+        for cid, alertas in alertas_por_cliente.items()
+        for a in alertas
+    ]
+    filas.sort(key=lambda par: (orden[par[1].severidad], -par[1].monto_involucrado))
+
+    for cliente_id, a in filas:
+        ev = evaluaciones.get(cliente_id)
+        perfil = perfiles.get(cliente_id)
+        resumen_perfil = (
+            f"${perfil.monto_mensual:,.0f}/mes, {perfil.operaciones_mensuales} op."
+            if perfil and perfil.declarado else "no declarado"
+        )
+        hoja.append([
+            cliente_id,
+            nombres.get(cliente_id, ""),
+            ev.nivel if ev else "",
+            resumen_perfil,
+            a.codigo,
+            a.severidad,
+            a.descripcion,
+            a.monto_involucrado,
+            a.detalle_operaciones,
+            a.metodologia,
+            a.generada.isoformat(),
+            a.vence.isoformat(),
+            "",
+            "",
+        ])
+        relleno = _SEVERIDAD_RELLENO.get(a.severidad)
+        for celda in hoja[hoja.max_row]:
+            celda.font = _CUERPO
+            if relleno:
+                celda.fill = relleno
+        hoja.cell(row=hoja.max_row, column=8).number_format = "#,##0"
+
+    if not filas:
+        hoja.append(["sin alertas de monitoreo"] + [""] * (len(columnas) - 1))
+        for celda in hoja[hoja.max_row]:
+            celda.font = _CUERPO
+
+    _ajustar_anchos(hoja, [12, 26, 9, 26, 26, 10, 72, 16, 70, 52, 12, 12, 26, 26])
 
     libro.save(ruta)
     return ruta

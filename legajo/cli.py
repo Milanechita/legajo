@@ -10,18 +10,21 @@ import argparse
 import sys
 from pathlib import Path
 
+from .alertas import monitorear, reglas_inactivas
 from .beneficiario import resolver
-from .config import POLITICA_POR_DEFECTO, Politica
+from .config import POLITICA_POR_DEFECTO, Politica, parametros_con_listas
 from .fuentes.base import Padron
 from .fuentes.descarga import actualizar
 from .fuentes.ofac import ParserOFAC, incorporar_alias
 from .fuentes.onu import ParserONU
 from .fuentes.repet import ParserRePET
 from .io_planilla import (
-    agregar_hojas_etapa2, exportar, leer_estructura, leer_padron, leer_peps,
+    agregar_hoja_alertas, agregar_hojas_etapa2, exportar, leer_estructura,
+    leer_operaciones, leer_padron, leer_peps, leer_perfiles,
 )
 from .matriz import MATRIZ_POR_DEFECTO
 from .modelo import Caso, Estado
+from .operaciones import agrupar
 from .riesgo import evaluar_casos
 from .screening import screenear
 
@@ -153,7 +156,7 @@ def comando_circuito(args: argparse.Namespace) -> int:
     casos = [Caso(caso_id=f"C{i:05d}", cliente=c) for i, c in enumerate(clientes, 1)]
 
     # --- Etapa 1 ---
-    print(f"\n[1/2] Screening: {len(clientes)} cliente(s) contra {len(padron)} designado(s)")
+    print(f"\n[1/3] Screening: {len(clientes)} cliente(s) contra {len(padron)} designado(s)")
     resultado = screenear(casos, padron, politica, actor=args.actor)
     print(f"      {len(resultado.coincidencias)} coincidencia(s), "
           f"{sum(1 for c in casos if c.estado is Estado.ESCALADO)} escalado(s)")
@@ -163,7 +166,7 @@ def comando_circuito(args: argparse.Namespace) -> int:
         por_cliente.setdefault(c.cliente_id, []).append(c)
 
     # --- Etapa 2 ---
-    print("\n[2/2] Beneficiario final y scoring EBR")
+    print("\n[2/3] Beneficiario final y scoring EBR")
 
     estructura = leer_estructura(args.societaria, clientes) if args.societaria else None
     resoluciones = {}
@@ -188,9 +191,56 @@ def comando_circuito(args: argparse.Namespace) -> int:
         actor=args.actor,
     )
 
-    # El expediente se escribe recien ahora, con la evidencia de las dos etapas.
+    # --- Etapa 3 ---
+    alertas: dict[str, list] = {}
+    perfiles: dict[str, object] = {}
+
+    if args.operaciones:
+        print("\n[3/3] Monitoreo transaccional")
+        operatorias = agrupar(leer_operaciones(args.operaciones))
+        perfiles = leer_perfiles(args.perfiles) if args.perfiles else {}
+
+        parametros = parametros_con_listas(umbral_reporte=args.umbral_reporte)
+        if args.umbral_reporte <= 0:
+            print("      aviso: sin umbral de reporte, la regla de fraccionamiento no corre",
+                  file=sys.stderr)
+
+        alertas = monitorear(operatorias, perfiles, parametros)
+        total_ops = sum(o.cantidad for o in operatorias.values())
+        print(f"      {total_ops} operacion(es) de {len(operatorias)} cliente(s), "
+              f"{len(perfiles)} perfil(es) declarado(s)")
+
+        for r in reglas_inactivas():
+            print(f"      regla apagada: {r.codigo}", file=sys.stderr)
+
+        por_caso = {c.cliente.cliente_id: c for c in casos}
+        for cliente_id, lista in alertas.items():
+            caso = por_caso.get(cliente_id)
+            if caso is None:
+                continue
+            for a in lista:
+                caso.registrar(
+                    args.actor, "ALERTA_MONITOREO",
+                    tipo=a.codigo, severidad=a.severidad,
+                    descripcion=a.descripcion, metodologia=a.metodologia,
+                    monto=round(a.monto_involucrado, 2),
+                    vence=a.vence.isoformat(),
+                )
+            # Una alerta reabre el legajo cerrado: la debida diligencia
+            # continuada alcanza a todos los clientes, no solo a los de
+            # riesgo alto.
+            if caso.estado in (Estado.CERRADO, Estado.SCORING):
+                origen = caso.estado.value
+                caso.transicionar(
+                    Estado.ANALISIS, args.actor,
+                    f"{len(lista)} alerta(s) de monitoreo"
+                    + (" (reapertura del legajo)" if origen == "CERRADO" else ""),
+                )
+
+    # El expediente se escribe recien ahora, con la evidencia de las tres etapas.
     ruta = exportar(resultado, casos, args.salida, politica.umbral_probable)
     agregar_hojas_etapa2(ruta, resoluciones, evaluaciones, casos)
+    agregar_hoja_alertas(ruta, alertas, casos, evaluaciones, perfiles)
 
     conteo = {"ALTO": 0, "MEDIO": 0, "BAJO": 0}
     for ev in evaluaciones.values():
@@ -209,6 +259,15 @@ def comando_circuito(args: argparse.Namespace) -> int:
         for cid, ev in sorted(altos, key=lambda kv: -kv[1].puntaje):
             motivo = ", ".join(ev.elevadores) or f"{ev.puntaje} pts"
             print(f"    {cid}  {nombres.get(cid, ''):28} {motivo}")
+
+    if alertas:
+        from collections import Counter
+        conteo = Counter(a.codigo for lista in alertas.values() for a in lista)
+        criticas = sum(1 for lista in alertas.values() for a in lista if a.severidad == "ALTA")
+        print(f"\n  Alertas de monitoreo: {sum(conteo.values())} "
+              f"sobre {len(alertas)} cliente(s), {criticas} de severidad alta")
+        for codigo, n in conteo.most_common():
+            print(f"    {codigo:28} {n:3}")
 
     print(f"\nInforme: {ruta}")
     return 0
@@ -256,10 +315,15 @@ def main(argv: list[str] | None = None) -> int:
     scr.add_argument("--salida", default="informe_screening.xlsx")
     scr.set_defaults(func=comando_screening)
 
-    cir = sub.add_parser("circuito", help="etapas 1 y 2: screening, beneficiario final y riesgo")
+    cir = sub.add_parser("circuito",
+                         help="etapas 1 a 3: screening, beneficiario final, riesgo y monitoreo")
     comunes(cir)
     cir.add_argument("--societaria", help="CSV o XLSX con el grafo societario")
     cir.add_argument("--peps", help="CSV de declaraciones juradas de condicion PEP")
+    cir.add_argument("--operaciones", help="CSV o XLSX con la operatoria de los clientes")
+    cir.add_argument("--perfiles", help="CSV o XLSX con los perfiles transaccionales")
+    cir.add_argument("--umbral-reporte", type=float, default=0.0,
+                     help="umbral de reporte en pesos, para detectar fraccionamiento")
     cir.add_argument("--salida", default="informe_circuito.xlsx")
     cir.set_defaults(func=comando_circuito)
 
