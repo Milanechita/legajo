@@ -3,7 +3,7 @@
 Automatización del circuito de análisis PLA/FT. Herramienta de escritorio para
 equipos de cumplimiento que hoy resuelven el cotejo de listas en planillas.
 
-**Estado: Etapa 1 de 5 — screening contra listas de control.**
+**Estado: etapas 1 y 2 de 5 — screening, beneficiario final y scoring EBR.**
 
 ---
 
@@ -31,7 +31,7 @@ ALTA ──▶ SCREENING ──▶ SCORING EBR ──▶ ANÁLISIS ──▶ ┬
 | Etapa | Alcance | Estado |
 |-------|---------|--------|
 | 1 | Cotejo contra listas OFAC / ONU / PEP | ✅ implementada |
-| 2 | Scoring EBR y beneficiario final | pendiente |
+| 2 | Beneficiario final y scoring EBR | ✅ implementada |
 | 3 | Perfil declarado vs. operado real | pendiente |
 | 4 | Motor de alertas y expediente | pendiente |
 | 5 | Export e insumo de ROS | pendiente |
@@ -43,11 +43,19 @@ ALTA ──▶ SCREENING ──▶ SCORING EBR ──▶ ANÁLISIS ──▶ ┬
 ```bash
 pip install -r requirements.txt
 
+# Etapa 1 sola
 python -m legajo screening \
   --padron  ejemplos/clientes.csv \
   --listas  ejemplos/listas \
-  --salida  informe_screening.xlsx \
-  --actor   "tiago/analista"
+  --salida  informe_screening.xlsx
+
+# Etapas 1 y 2 encadenadas
+python -m legajo circuito \
+  --padron      ejemplos/clientes.csv \
+  --listas      ejemplos/listas \
+  --societaria  ejemplos/estructura.csv \
+  --peps        ejemplos/peps.txt \
+  --salida      informe_circuito.xlsx
 ```
 
 Salida:
@@ -77,8 +85,23 @@ fecha_nacimiento, nacionalidad, pais_residencia, actividad
 
 ### Salida
 
-XLSX de tres hojas: **Resumen**, **Coincidencias** (priorizadas y coloreadas)
-y **Expediente** (traza completa de cada caso).
+XLSX de cinco hojas: **Resumen**, **Coincidencias** (priorizadas y coloreadas),
+**Expediente** (traza completa de cada caso), **Beneficiario final** y **Riesgo**
+(coloreada por nivel).
+
+### Estructura societaria (etapa 2)
+
+Una sola tabla, con una columna `relacion` que despacha el tipo de vínculo:
+
+```
+relacion,origen_id,origen_nombre,origen_tipo,destino_id,capital,voto,detalle
+PARTICIPACION,P-001,Roberto Iglesias,PERSONA,CL003,0.08,0.08,
+PARTICIPACION,SOC-A,Inversora del Plata SA,ENTIDAD,CL003,0.55,0.55,
+CONTROL,P-002,Silvia Marconi,PERSONA,CL003,,,acuerdo de accionistas
+ADMINISTRACION,P-003,Hector Ledesma,PERSONA,CL003,,,presidente del directorio
+```
+
+Acepta `0.60`, `60` y `60%` como el mismo valor.
 
 ### Listas
 
@@ -133,6 +156,61 @@ puntaje pero nunca descartan solos**: las listas tienen campos secundarios
 incompletos y contradictorios, y un descarte automático sería un falso negativo
 introducido por el propio sistema.
 
+### El umbral del 10% va a la suma, no a cada arista
+
+Éste es el error que hace perder beneficiarios en silencio:
+
+```
+Juan ─15%─▶ A ─40%─▶ X     =  6%
+Juan ─ 8%─────────▶ X      =  8%
+                             ────
+                             14%  → ES beneficiario final
+```
+
+Podar la arista del 8% durante el recorrido por estar bajo el umbral hace
+desaparecer a Juan. El recorrido acumula todos los caminos y el umbral se
+aplica recién al final.
+
+### La detección de ciclos es sobre el camino, no global
+
+```
+Juan ─50%─▶ A ─30%─▶ X
+Juan ─50%─▶ B ─30%─▶ X     Juan = 15% + 15% = 30%
+```
+
+Con un conjunto de visitados global, Juan se cuenta una vez y da 15%. La
+marca de visitado tiene que ser la rama actual, para que una misma persona
+alcanzada por varias ramas sume.
+
+### La titularidad se conserva
+
+Invariante que las pruebas verifican: **beneficiarios + partícipes menores +
+titularidad no identificada = 100%**. Si no cierra, hay titularidad perdida
+en el recorrido.
+
+Lo que entra en un ciclo se cuenta como no identificado: nunca alcanza una
+persona humana, y a efectos de cumplimiento eso es lo mismo que capital no
+declarado.
+
+### Capital y voto se acumulan por separado
+
+La Res. 112/2021 dice capital **o** derechos de voto. Alguien con 5% de
+capital y 40% de los votos es beneficiario final. Colapsar ambos en un solo
+número pierde el caso de las acciones preferidas sin voto, que no es teórico.
+
+### Los elevadores fijan un piso, no suman puntos
+
+"Pero si es PEP entonces siempre alto" termina como un `if` disperso en cinco
+lugares del código. Como elevador, es una línea de configuración: ninguna
+suma de factores bajos puede dejar en riesgo bajo a un cliente que la
+normativa considera de riesgo alto por definición.
+
+### Todo punto de riesgo queda desglosado
+
+Un nivel que no se puede explicar factor por factor no sirve: hay que poder
+justificar por qué un cliente quedó en diligencia reforzada. Cada factor
+aplicado se registra con su código, su puntaje y su descripción.
+
 ### Entra y sale por Excel
 
 El equipo de cumplimiento trabaja en Excel. Una herramienta que lo obligue a
@@ -165,8 +243,12 @@ legajo/
 ├── modelo.py          Caso, Evidencia, máquina de estados
 ├── normalizar.py      canonicalización de nombres
 ├── matcher.py         Jaro-Winkler y cotejo por tokens
-├── config.py          política: umbrales y atenuantes
+├── config.py          política de screening: umbrales y atenuantes
 ├── screening.py       orquestador de la etapa 1
+├── societaria.py      grafo de titularidad
+├── beneficiario.py    resolución de beneficiario final
+├── matriz.py          política de riesgo: factores y elevadores
+├── riesgo.py          evaluador EBR
 ├── io_planilla.py     lectura CSV/XLSX y export a Excel
 ├── cli.py             interfaz de línea de comandos
 └── fuentes/
@@ -197,6 +279,13 @@ Los casos que importan:
 - Un dato secundario ausente no penaliza
 - Una transición de estado inválida se rechaza
 - El expediente registra la procedencia de cada lista
+- El umbral del 10% se aplica a la suma de caminos, no a cada arista
+- Un diamante societario suma las dos ramas
+- El voto califica aunque el capital no alcance
+- La titularidad se conserva: beneficiarios + menores + opaca = 100%
+- Un ciclo no cuelga el recorrido y cuenta como titularidad no identificada
+- Un elevador fija el nivel alto aunque el puntaje no alcance
+- Cambiar la matriz cambia el resultado sin tocar el evaluador
 
 ---
 
@@ -224,6 +313,10 @@ Limitaciones conocidas:
   que publican las listas
 - Los umbrales por defecto son un punto de partida, no una calibración: cada
   sujeto obligado debe ajustarlos a su perfil de riesgo y medir el resultado
+- Las jurisdicciones de riesgo en `matriz.py` deben actualizarse contra la
+  publicación vigente del GAFI en cada revisión de la matriz
+- La condición de PEP se toma de un archivo declarativo; no hay cotejo
+  automático contra un registro de PEP
 
 ---
 

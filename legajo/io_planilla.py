@@ -10,13 +10,19 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+if TYPE_CHECKING:
+    from .beneficiario import Resolucion
+    from .riesgo import Evaluacion
+
 from .modelo import Caso, Cliente, Documento
 from .screening import Coincidencia, ResultadoScreening
+from .societaria import Administracion, Control, Estructura, Nodo, Participacion
 
 FUENTE = "Arial"
 
@@ -55,10 +61,8 @@ def _fila_a_cliente(fila: dict[str, str]) -> Cliente:
     )
 
 
-def leer_padron(ruta: str | Path) -> list[Cliente]:
-    """Lee el padron de clientes desde CSV o XLSX."""
-    ruta = Path(ruta)
-
+def _leer_tabla(ruta: Path) -> list[dict[str, str]]:
+    """Lee CSV o XLSX a una lista de diccionarios. Un solo camino para ambos."""
     if ruta.suffix.lower() in {".xlsx", ".xlsm"}:
         libro = load_workbook(ruta, read_only=True, data_only=True)
         hoja = libro.active
@@ -69,12 +73,83 @@ def leer_padron(ruta: str | Path) -> list[Cliente]:
             for fila in filas
         ]
         libro.close()
-    else:
-        with ruta.open(encoding="utf-8-sig", newline="") as f:
-            registros = list(csv.DictReader(f))
+        return registros
 
-    clientes = [_fila_a_cliente(r) for r in registros]
+    with ruta.open(encoding="utf-8-sig", newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def leer_padron(ruta: str | Path) -> list[Cliente]:
+    """Lee el padron de clientes desde CSV o XLSX."""
+    clientes = [_fila_a_cliente(r) for r in _leer_tabla(Path(ruta))]
     return [c for c in clientes if c.cliente_id and c.nombre]
+
+
+COLUMNAS_ESTRUCTURA = [
+    "relacion", "origen_id", "origen_nombre", "origen_tipo",
+    "destino_id", "capital", "voto", "detalle",
+]
+
+
+def _fraccion(valor: str) -> float:
+    """Acepta 0.60, 60 y 60% como la misma cosa."""
+    texto = (valor or "").strip().replace("%", "").replace(",", ".")
+    if not texto:
+        return 0.0
+    numero = float(texto)
+    return numero / 100.0 if numero > 1.0 else numero
+
+
+def leer_estructura(ruta: str | Path, clientes: list[Cliente] | None = None) -> Estructura:
+    """Lee el grafo societario.
+
+    Una sola tabla con una columna `relacion` que despacha el tipo. Agregar un
+    tipo de vinculo nuevo es agregar una rama en el despacho, no un archivo
+    de entrada nuevo ni un formato paralelo.
+    """
+    estructura = Estructura()
+
+    for cliente in clientes or []:
+        estructura.agregar_nodo(
+            Nodo(id=cliente.cliente_id, nombre=cliente.nombre, tipo=cliente.tipo)
+        )
+
+    for fila in _leer_tabla(Path(ruta)):
+        relacion = (fila.get("relacion") or "").strip().upper()
+        origen = (fila.get("origen_id") or "").strip()
+        destino = (fila.get("destino_id") or "").strip()
+        if not relacion or not origen or not destino:
+            continue
+
+        estructura.agregar_nodo(Nodo(
+            id=origen,
+            nombre=(fila.get("origen_nombre") or origen).strip(),
+            tipo=(fila.get("origen_tipo") or "PERSONA").strip().upper() or "PERSONA",
+        ))
+
+        detalle = (fila.get("detalle") or "").strip()
+
+        if relacion == "PARTICIPACION":
+            capital = _fraccion(fila.get("capital", ""))
+            voto_crudo = (fila.get("voto") or "").strip()
+            estructura.agregar_participacion(Participacion(
+                propietario=origen,
+                participada=destino,
+                capital=capital,
+                voto=_fraccion(voto_crudo) if voto_crudo else None,
+            ))
+        elif relacion == "CONTROL":
+            estructura.agregar_control(Control(
+                persona=origen, entidad=destino,
+                motivo=detalle or "control final por otros medios",
+            ))
+        elif relacion == "ADMINISTRACION":
+            estructura.agregar_administracion(Administracion(
+                persona=origen, entidad=destino,
+                cargo=detalle or "administrador",
+            ))
+
+    return estructura
 
 
 def _ajustar_anchos(hoja, anchos: list[int]) -> None:
@@ -170,6 +245,84 @@ def exportar(
         for celda in fila:
             celda.font = _CUERPO
     _ajustar_anchos(exp, [12, 28, 22, 20, 22, 90])
+
+    libro.save(ruta)
+    return ruta
+
+
+_NIVEL_RELLENO = {
+    "ALTO": PatternFill("solid", start_color="F4B6B0"),
+    "MEDIO": PatternFill("solid", start_color="FFE599"),
+    "BAJO": PatternFill("solid", start_color="D9EAD3"),
+}
+
+
+def agregar_hojas_etapa2(
+    ruta: str | Path,
+    resoluciones: dict[str, "Resolucion"],
+    evaluaciones: dict[str, "Evaluacion"],
+    casos: list[Caso],
+) -> Path:
+    """Agrega las hojas de beneficiario final y riesgo al informe existente.
+
+    Se escribe sobre el mismo libro que produjo la etapa 1 en lugar de emitir
+    un segundo archivo: el analista recibe un informe, no una carpeta.
+    """
+    ruta = Path(ruta)
+    libro = load_workbook(ruta)
+    nombres = {c.cliente.cliente_id: c.cliente.nombre for c in casos}
+
+    # --- Beneficiario final ---
+    hoja = libro.create_sheet("Beneficiario final")
+    _escribir_encabezado(hoja, [
+        "cliente_id", "cliente", "beneficiario", "capital", "voto",
+        "via", "detalle", "niveles", "titularidad_opaca", "observaciones",
+    ])
+
+    for cliente_id, r in resoluciones.items():
+        obs = "; ".join(r.observaciones)
+        if not r.beneficiarios:
+            hoja.append([
+                cliente_id, nombres.get(cliente_id, ""), "NO IDENTIFICADO",
+                None, None, "", "", r.profundidad_maxima,
+                r.titularidad_opaca, obs,
+            ])
+        for b in r.beneficiarios:
+            hoja.append([
+                cliente_id, nombres.get(cliente_id, ""), b.nombre,
+                b.capital, b.voto, b.via, b.detalle,
+                r.profundidad_maxima, r.titularidad_opaca, obs,
+            ])
+
+    for fila in hoja.iter_rows(min_row=2):
+        for celda in fila:
+            celda.font = _CUERPO
+        for idx in (4, 5, 9):  # capital, voto, opaca
+            fila[idx - 1].number_format = "0.00%"
+    _ajustar_anchos(hoja, [12, 26, 26, 10, 10, 14, 46, 9, 16, 46])
+
+    # --- Riesgo ---
+    hoja = libro.create_sheet("Riesgo")
+    _escribir_encabezado(hoja, [
+        "cliente_id", "cliente", "puntaje", "nivel", "regimen",
+        "elevadores", "factores aplicados",
+    ])
+
+    orden = {"ALTO": 0, "MEDIO": 1, "BAJO": 2}
+    for cliente_id, ev in sorted(
+        evaluaciones.items(), key=lambda kv: (orden[kv[1].nivel], -kv[1].puntaje)
+    ):
+        hoja.append([
+            cliente_id, nombres.get(cliente_id, ""), ev.puntaje, ev.nivel, ev.regimen,
+            "; ".join(ev.elevadores),
+            " | ".join(f"{f.codigo} (+{f.puntos:g}) {f.descripcion}" for f in ev.factores),
+        ])
+        relleno = _NIVEL_RELLENO.get(ev.nivel)
+        for celda in hoja[hoja.max_row]:
+            celda.font = _CUERPO
+            if relleno:
+                celda.fill = relleno
+    _ajustar_anchos(hoja, [12, 26, 9, 9, 18, 30, 110])
 
     libro.save(ruta)
     return ruta
