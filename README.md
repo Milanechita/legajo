@@ -46,7 +46,9 @@ ALTA ──▶ SCREENING ──▶ SCORING EBR ──▶ ANÁLISIS ──▶ ┬
 ```bash
 pip install -r requirements.txt
 
-# Bajar las listas desde las fuentes oficiales
+# Bajar OFAC y ONU desde las fuentes oficiales.
+# RePET va aparte: se exporta a mano a listas/repet_personas.json
+# y listas/repet_entidades.json
 python -m legajo actualizar-listas --listas listas/
 
 # Etapa 1 sola
@@ -90,28 +92,41 @@ credenciales. No hay que registrarse ni pedir API key.
 
 | Lista | Fuente | Acceso |
 |-------|--------|--------|
-| OFAC SDN más alias | Sanctions List Service del Tesoro de EE.UU. | libre |
-| ONU Consolidada | Consejo de Seguridad, XML público | libre |
-| UK Sanctions List | FCDO, opcional para Argentina | libre |
+| OFAC SDN más alias | Sanctions List Service del Tesoro de EE.UU. | descarga automática |
+| ONU Consolidada | Consejo de Seguridad, XML público | descarga automática |
+| UK Sanctions List | FCDO, opcional para Argentina | descarga automática |
+| RePET | Registro argentino | export manual |
 
 El comando `actualizar-listas` las baja, calcula el SHA-256 de cada archivo y
 lo deja registrado. Si una descarga falla, el archivo anterior queda intacto.
 Screenear con una lista vieja es malo, pero screenear con una lista a medias es
 peor.
 
-**RePET es la excepción y conviene decirlo claro.** Es la lista que la
-normativa argentina nombra por su nombre, y no publica ningún endpoint de
-datos: solo tiene buscador web en `repet.jus.gob.ar`. Para cotejar un padrón
-entero hay que exportarla desde un redistribuidor (OpenSanctions publica el
-dataset `ar_repet` actualizado a diario) o cargarla a mano. El parser acepta
-los dos formatos.
+**RePET es la excepción.** Es la lista que la normativa argentina nombra por
+su nombre, y no publica ningún endpoint de datos: solo tiene buscador web en
+`repet.jus.gob.ar`. Hay que exportarla y cargarla. El parser acepta tres
+formatos: el JSON del propio registro, el JSON de OpenSanctions y un CSV
+mínimo para carga manual.
 
-Hay algo más que vale aclarar sobre RePET. Incorpora el listado consolidado de
-la ONU, así que en la práctica se superpone casi por completo con lo que ya
-estamos cotejando. Lo que agrega son las designaciones de origen local, que son
-las personas con resolución judicial o del Ministerio Público Fiscal y aquellas
-sobre las que la UIF ordenó congelamiento administrativo. Esas no figuran en
-ninguna otra lista, y por eso el cotejo sigue siendo obligatorio.
+Se suele suponer que RePET es una copia del listado de la ONU y que por lo
+tanto no aporta nada sobre lo que ya se cotea. Los datos lo desmienten. Sobre
+el export de septiembre de 2026, de 718 registros:
+
+```
+Al-Qaida y Talibán ......... 469   vienen de la ONU
+resto ...................... 249   designaciones de origen local
+```
+
+Ese resto son congelamientos ordenados por la UIF, Notificaciones Rojas de
+INTERPOL, la causa AMIA, actuaciones de PROCELAC y resoluciones del Ministerio
+de Justicia. Un tercio del registro que no figura en ninguna otra lista del
+mundo. Omitir RePET no es un atajo aceptable.
+
+Dos características del origen que conviene conocer. El registro lista a la
+misma persona más de una vez cuando hubo varias resoluciones sobre ella, y la
+carga usa el nombre del organismo con grafías distintas en cada asiento. No se
+fusionan, porque cada asiento es una designación propia, pero la corrida lo
+avisa para que nadie piense que el programa está duplicando.
 
 ---
 
@@ -287,6 +302,62 @@ Riesgo alto se revisa cada 12 meses, medio cada 36, bajo cada 60. Calcular la
 fecha a partir del nivel, y no desde una agenda separada, evita que el plazo y
 el riesgo se desincronicen.
 
+### Los países se normalizan a código ISO antes de comparar
+
+Las tres fuentes nombran al mismo país de forma distinta:
+
+```
+GAFI ......... "Democratic Republic of the Congo"
+ARCA ......... "República Democrática del Congo"
+el padrón .... "CONGO", "RD CONGO", "CD"
+```
+
+Comparar esos strings entre sí garantiza falsos negativos silenciosos, que es
+el error que no se puede permitir. Un caso real durante el desarrollo: el
+padrón decía `Líbano` con tilde y la lista decía `LIBANO`. Los dos en
+mayúscula seguían sin coincidir, y el factor de riesgo GAFI no se aplicaba.
+Nadie se enteraba, porque el programa corría sin errores.
+
+Todo se normaliza a ISO 3166-1 alfa-2 una sola vez, en el borde. De ahí en
+adelante las listas comparan códigos de dos letras y el idioma deja de
+importar.
+
+La tabla es explícita a propósito. Se puede intentar deducir el país sacando
+prefijos, pero `República Kirguisa` y `República Gabonesa` dejan un adjetivo,
+no un país. Escribir los alias a mano es más largo y es correcto.
+
+Un país que la tabla no reconoce devuelve `None` y genera su propio factor de
+riesgo. Silencio no es lo mismo que bajo riesgo: un país sin normalizar es un
+país que no se cotejó contra ninguna lista.
+
+### Contramedidas y diligencia reforzada no son lo mismo
+
+Dentro de la lista negra del GAFI hay dos tratamientos distintos. A Irán y
+Corea del Norte el organismo pide aplicar contramedidas. A Myanmar solo
+diligencia reforzada proporcional al riesgo. Colapsar las dos en una categoría
+pierde una distinción que el propio GAFI hace explícita.
+
+La lista gris tiene una aclaración en sentido contrario, y también suele
+ignorarse: el GAFI dice expresamente que **no** pide diligencia reforzada
+sobre esas jurisdicciones, sino tenerlas en cuenta en el análisis de riesgo.
+Por eso suman puntos y no son elevador.
+
+### Las listas llevan fecha de corte
+
+El GAFI actualiza tres veces al año, después de los plenarios de febrero,
+junio y octubre. ARCA cambia por decreto. El SMVM se fija dos veces al año.
+
+Cada uno de esos parámetros tiene su fecha escrita al lado en el código. Sin
+la fecha no hay forma de saber si la matriz está vencida, y una matriz vencida
+produce puntajes equivocados sin avisar.
+
+### Los umbrales normativos se guardan en SMVM, no en pesos
+
+La normativa no fija los montos en pesos sino en cantidad de salarios mínimos.
+Guardarlos igual que la norma significa que al actualizar el salario los
+montos se recalculan solos, en vez de quedar tres valores desfasados en
+lugares distintos.
+
 ### Entra y sale por Excel
 
 El equipo de cumplimiento trabaja en Excel. Una herramienta que lo obligue a
@@ -320,10 +391,11 @@ legajo/
 ├── modelo.py          Caso, Evidencia, máquina de estados
 ├── normalizar.py      canonicalización de nombres
 ├── matcher.py         Jaro-Winkler y cotejo por tokens
-├── config.py          política de screening: umbrales y atenuantes
+├── config.py          política de screening, SMVM y umbrales normativos
 ├── screening.py       orquestador de la etapa 1
 ├── societaria.py      grafo de titularidad
 ├── beneficiario.py    resolución de beneficiario final
+├── paises.py          normalización de países a código ISO
 ├── pep.py             tipificación y vigencia de la condición PEP
 ├── matriz.py          política de riesgo: factores, elevadores, periodicidad
 ├── riesgo.py          evaluador EBR
@@ -350,7 +422,7 @@ que auditar, versionar y justificar. La única dependencia del proyecto es
 python -m pytest tests/ -q
 ```
 
-Son 61 y están escritas como escenarios de dominio, no como pruebas de
+Son 96 y están escritas como escenarios de dominio, no como pruebas de
 funciones sueltas. Las que importan:
 
 - El umbral del 10% se aplica a la suma de caminos y no a cada arista
@@ -367,6 +439,12 @@ funciones sueltas. Las que importan:
   generan falsos positivos
 - El expediente registra la procedencia de cada lista
 - Cambiar la matriz cambia el resultado sin tocar el evaluador
+- Las tres fuentes de países convergen al mismo código ISO
+- Una tilde o un apóstrofo no rompen el cotejo geográfico
+- Una lista con un país desconocido falla ruidosamente en vez de cargarse a medias
+- Un país sin normalizar genera su propio factor en vez de pasar como bajo riesgo
+- El 35% de RePET es de origen local y no está en ninguna otra lista
+- Las bajas del registro se excluyen del cotejo
 
 ---
 
@@ -379,6 +457,8 @@ funciones sueltas. Las que importan:
 - **Res. UIF 3/2026**, financiamiento de la proliferación de armas de
   destrucción masiva, con el ROS FPADM
 - **Decreto 918/2012 y 489/2019**, creación del RePET
+- **Decreto 862/2019**, texto según **Decreto 398/2026**, jurisdicciones no
+  cooperantes a fines de transparencia fiscal
 - **Recomendaciones GAFI**, enfoque basado en riesgo
 
 ---
@@ -394,13 +474,18 @@ Lo que conviene saber antes de usarla:
   regulares, así que la cobertura no es total
 - No resuelve nombres en alfabetos no latinos y opera sobre las
   transliteraciones que publican las listas
-- RePET depende de una exportación manual o de un redistribuidor, porque no
-  hay fuente oficial en formato máquina
+- RePET depende de una exportación manual, porque no hay fuente oficial en
+  formato máquina
+- La tabla de países cubre las listas cargadas más Latinoamérica, las
+  economías principales y los centros offshore frecuentes. No es la ISO
+  completa. Un país que falte se marca en el informe en vez de pasar
+  inadvertido, pero hay que agregarlo
 - Los umbrales por defecto son un punto de partida y no una calibración. Cada
   sujeto obligado tiene que ajustarlos a su perfil de riesgo y medir el
   resultado
-- Las jurisdicciones de riesgo en `matriz.py` hay que actualizarlas contra la
-  publicación vigente del GAFI en cada revisión de la matriz
+- Las listas de `matriz.py` están al plenario GAFI del 19 de junio de 2026 y
+  al Decreto 398/2026. Hay que actualizarlas después de cada plenario
+- El SMVM está al valor de septiembre de 2026. Se fija dos veces al año
 - La condición de PEP se toma de declaraciones juradas. No hay cotejo
   automático contra un registro de PEP porque en Argentina no existe uno
   público consolidado

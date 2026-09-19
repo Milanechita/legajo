@@ -25,12 +25,15 @@ from .modelo import Caso, Estado
 from .riesgo import evaluar_casos
 from .screening import screenear
 
-PARSERS = {
-    "SDN.CSV": ParserOFAC(),
-    "consolidated.xml": ParserONU(),
-    "repet.json": ParserRePET(),
-    "repet.csv": ParserRePET(),
-}
+# Cada lista logica puede venir en varios archivos, y en varios formatos
+# alternativos. Se agrupan asi para avisar una sola vez por lista faltante:
+# un aviso falso repetido entrena al analista a ignorar los avisos.
+FUENTES_LOCALES = (
+    ("OFAC SDN", ("SDN.CSV",), ParserOFAC()),
+    ("Lista Consolidada ONU", ("consolidated.xml",), ParserONU()),
+    ("RePET", ("repet_personas.json", "repet_entidades.json",
+               "repet.json", "repet.csv"), ParserRePET()),
+)
 
 
 def cargar_listas(directorio: Path) -> Padron:
@@ -42,24 +45,48 @@ def cargar_listas(directorio: Path) -> Padron:
     """
     padron = Padron()
 
-    for nombre, parser in PARSERS.items():
-        ruta = directorio / nombre
-        if not ruta.exists():
-            print(f"  aviso: {nombre} no encontrado, se omite", file=sys.stderr)
+    for etiqueta, archivos, parser in FUENTES_LOCALES:
+        encontrados = [directorio / a for a in archivos if (directorio / a).exists()]
+        if not encontrados:
+            print(f"  aviso: {etiqueta} no encontrada, se omite", file=sys.stderr)
             continue
 
-        contenido = ruta.read_bytes()
-        designados, version = parser.parsear(contenido)
+        for ruta in encontrados:
+            contenido = ruta.read_bytes()
+            designados, version = parser.parsear(contenido)
 
-        if nombre == "SDN.CSV":
-            alt = directorio / "ALT.CSV"
-            if alt.exists():
-                designados = incorporar_alias(designados, alt.read_bytes())
+            if ruta.name == "SDN.CSV":
+                alt = directorio / "ALT.CSV"
+                if alt.exists():
+                    designados = incorporar_alias(designados, alt.read_bytes())
 
-        padron.incorporar(designados, version)
-        print(f"  {version.resumen()}")
+            padron.incorporar(designados, version)
+            print(f"  {version.resumen()}")
 
+    _avisar_duplicados(padron)
     return padron
+
+
+def _avisar_duplicados(padron: Padron) -> None:
+    """Informa nombres repetidos dentro del padron de designados.
+
+    RePET lista a la misma persona mas de una vez cuando hubo varias
+    resoluciones sobre ella. No se fusionan, porque cada asiento es una
+    designacion distinta, pero conviene decirlo: si no, el analista ve el
+    mismo nombre tres veces y cree que el programa esta roto.
+    """
+    from collections import Counter
+
+    from .normalizar import normalizar
+
+    conteo = Counter(
+        normalizar(d.nombre, es_entidad=d.es_entidad) for d in padron.designados
+    )
+    repetidos = {n: c for n, c in conteo.items() if c > 1 and n}
+    if repetidos:
+        extra = sum(repetidos.values()) - len(repetidos)
+        print(f"  aviso: {len(repetidos)} nombre(s) repetido(s) en el origen "
+              f"({extra} asiento(s) adicional(es)); no se fusionan")
 
 
 def _preparar(args: argparse.Namespace):

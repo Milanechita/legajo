@@ -12,20 +12,95 @@ puede mostrarse tal cual ante una supervision.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 
-# Jurisdicciones bajo llamado a la accion del GAFI. Historicamente estables,
-# pero la lista es dinamica: debe actualizarse contra la publicacion vigente
-# del GAFI en cada revision de la matriz.
-JURISDICCIONES_ALTO_RIESGO = frozenset({
-    "IRAN", "COREA DEL NORTE", "REPUBLICA POPULAR DEMOCRATICA DE COREA",
-    "MYANMAR",
-})
+from .paises import codigos
 
-# Jurisdicciones bajo monitoreo intensificado ("lista gris"). Igual que arriba:
-# es un parametro, no una verdad permanente.
-JURISDICCIONES_MONITOREO = frozenset({
-    "BOLIVIA", "HAITI", "LIBANO", "NIGERIA", "SIRIA", "VENEZUELA", "YEMEN",
-})
+# ---------------------------------------------------------------------------
+# Listas del GAFI, plenario del 19 de junio de 2026.
+#
+# El GAFI las actualiza tres veces al anio, tras los plenarios de febrero,
+# junio y octubre. La fecha de abajo no es decorativa: si tiene mas de cuatro
+# meses, la matriz esta desactualizada y hay clientes recibiendo el puntaje
+# equivocado.
+#
+# Se guardan como codigos ISO porque el GAFI publica en ingles y el padron
+# viene en castellano. Ver paises.py.
+# ---------------------------------------------------------------------------
+
+GAFI_PLENARIO = date(2026, 6, 19)
+
+# El GAFI distingue dos tratamientos dentro de la lista negra, y la diferencia
+# es de fondo: a Iran y Corea del Norte pide aplicar contramedidas, a Myanmar
+# solo debida diligencia reforzada proporcional al riesgo. Colapsar las dos en
+# una sola categoria pierde esa distincion.
+GAFI_CONTRAMEDIDAS = codigos([
+    "Democratic People's Republic of Korea",
+    "Iran",
+])
+
+GAFI_DILIGENCIA_REFORZADA = codigos([
+    "Myanmar",
+])
+
+JURISDICCIONES_ALTO_RIESGO = GAFI_CONTRAMEDIDAS | GAFI_DILIGENCIA_REFORZADA
+
+# Lista gris. El GAFI aclara expresamente que NO pide diligencia reforzada
+# sobre estas jurisdicciones, sino tenerlas en cuenta en el analisis de riesgo.
+# Por eso suman puntos y no son elevador.
+JURISDICCIONES_MONITOREO = codigos([
+    "Angola", "Bolivia", "Bosnia and Herzegovina", "Bulgaria", "Cameroon",
+    "Côte d'Ivoire", "Democratic Republic of the Congo", "Haiti", "Iraq",
+    "Kenya", "Kuwait", "Lao PDR", "Lebanon", "Monaco", "Nepal",
+    "Papua New Guinea", "South Sudan", "Syria", "Venezuela", "Vietnam",
+    "Virgin Islands (UK)", "Yemen",
+])
+
+# ---------------------------------------------------------------------------
+# Jurisdicciones no cooperantes a fines de transparencia fiscal.
+# Decreto 862/2019, texto segun Decreto 398/2026, vigente para periodos
+# fiscales iniciados desde el 28 de mayo de 2026.
+#
+# Es un criterio fiscal y no de PLA/FT, por eso va aparte del GAFI. Los
+# manuales del sector lo usan para reforzar controles sobre transferencias
+# desde y hacia el exterior.
+# ---------------------------------------------------------------------------
+
+ARCA_VIGENCIA = date(2026, 5, 28)
+
+JURISDICCIONES_NO_COOPERANTES = codigos([
+    "Brecqhou", "Estado de Eritrea", "Estado de la Ciudad del Vaticano",
+    "Estado de Libia", "Estado Plurinacional de Bolivia", "Isla Ascensión",
+    "Isla de Sark", "Isla Santa Elena", "Islas Salomón",
+    "Los Estados Federados de Micronesia", "Reino de Bután", "Reino de Camboya",
+    "Reino de Lesoto", "Reino de Tonga", "República Kirguisa",
+    "República Árabe de Egipto", "República Árabe Siria",
+    "República Argelina Democrática y Popular", "República Centroafricana",
+    "República Cooperativa de Guyana", "República de Angola",
+    "República de Bielorrusia", "República de Burundí",
+    "República de Costa de Marfil", "República de Cuba", "República de Fiyi",
+    "República de Gambia", "República de Guinea", "República de Guinea Ecuatorial",
+    "República Democrática Popular Lao",
+    "República Democrática Socialista de Sri Lanka", "República Federal de Somalia",
+    "República Federal Democrática de Nepal", "República Gabonesa",
+    "República Islámica de Afganistán", "República Islámica de Irán",
+    "República Popular de Bangladés", "República de Guinea-Bisáu",
+    "República de Haití", "República de Honduras", "República de Irak",
+    "República de Kiribati", "República de la Unión de Myanmar",
+    "República de Malaui", "República de Malí", "República de Mozambique",
+    "República de Nicaragua", "República de Palaos", "República de Sierra Leona",
+    "República de Sudán del Sur", "República de Surinam",
+    "República de Tayikistán", "República de Uzbekistán", "República de Yemen",
+    "República de Yibuti", "República de Zambia", "República de Zimbabue",
+    "República del Chad", "República del Níger", "República del Sudán",
+    "República Democrática de Santo Tomé y Príncipe",
+    "República Democrática de Timor-Leste", "República del Congo",
+    "República Democrática del Congo", "República Democrática Federal de Etiopía",
+    "República Popular Democrática de Corea", "República Togolesa",
+    "República Unida de Tanzania",
+    "Territorio Británico de Ultramar Islas Pitcairn, Henderson, Ducie y Oeno",
+    "Tristán da Cunha", "Tuvalu", "Unión de las Comoras",
+])
 
 # Actividades con exposicion elevada segun tipologias GAFI y UIF.
 ACTIVIDADES_SENSIBLES = frozenset({
@@ -63,8 +138,11 @@ class MatrizRiesgo:
     puntos_pep_parentesco: float = 10.0   # se suma al tipo que corresponda
 
     # --- Dimension geografica ---
+    puntos_jurisdiccion_contramedidas: float = 45.0
     puntos_jurisdiccion_alto_riesgo: float = 40.0
     puntos_jurisdiccion_monitoreo: float = 18.0
+    puntos_jurisdiccion_no_cooperante: float = 12.0
+    puntos_pais_no_reconocido: float = 8.0
     puntos_residencia_distinta_nacionalidad: float = 5.0
 
     # --- Dimension actividad ---
@@ -96,8 +174,10 @@ class MatrizRiesgo:
         "JURISDICCION_ALTO_RIESGO",
     })
 
+    jurisdicciones_contramedidas: frozenset[str] = GAFI_CONTRAMEDIDAS
     jurisdicciones_alto_riesgo: frozenset[str] = JURISDICCIONES_ALTO_RIESGO
     jurisdicciones_monitoreo: frozenset[str] = JURISDICCIONES_MONITOREO
+    jurisdicciones_no_cooperantes: frozenset[str] = JURISDICCIONES_NO_COOPERANTES
     actividades_sensibles: frozenset[str] = ACTIVIDADES_SENSIBLES
 
 

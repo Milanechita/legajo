@@ -12,6 +12,7 @@ positivo es una hora de trabajo de un analista. No son errores comparables.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 
 @dataclass(frozen=True)
@@ -38,3 +39,46 @@ class Politica:
 
 
 POLITICA_POR_DEFECTO = Politica()
+
+
+# ---------------------------------------------------------------------------
+# Salario Minimo, Vital y Movil.
+#
+# Buena parte de la normativa no fija umbrales en pesos sino en SMVM, asi que
+# el valor vigente es un parametro del sistema y no un dato de color. Lo fija
+# el Consejo Nacional del Empleo, la Productividad y el SMVM, y rige el valor
+# al 31 de diciembre del anio anterior o al 30 de junio del corriente, segun
+# corresponda.
+#
+# Si la fecha de abajo tiene mas de seis meses, los umbrales estan mal.
+# ---------------------------------------------------------------------------
+
+SMVM = 383_800.0
+SMVM_VIGENCIA = date(2026, 9, 1)
+
+
+def pesos(cantidad_smvm: float) -> float:
+    """Convierte un umbral expresado en SMVM a pesos."""
+    return cantidad_smvm * SMVM
+
+
+@dataclass(frozen=True)
+class UmbralesSMVM:
+    """Umbrales normativos, en cantidad de SMVM.
+
+    Se guardan en SMVM y no en pesos porque asi los escribe la norma. Al
+    actualizar el salario, los montos se recalculan solos.
+    """
+
+    cliente_habitual: float = 700.0          # Res. 43/2024
+    locacion_alcanzada: float = 300.0        # Res. 43/2024
+    revision_externa: float = 875.0          # Res. 43/2024 art. 17
+    compraventa_inmuebles: float = 700.0     # Ley 25.246 art. 20 inc. 17 a)
+    administracion_bienes: float = 150.0     # Ley 25.246 art. 20 inc. 17 b)
+    administracion_cuentas: float = 50.0     # Ley 25.246 art. 20 inc. 17 c)
+
+    def en_pesos(self, nombre: str) -> float:
+        return pesos(getattr(self, nombre))
+
+
+UMBRALES = UmbralesSMVM()

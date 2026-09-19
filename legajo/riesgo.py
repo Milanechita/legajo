@@ -24,6 +24,7 @@ from .matriz import (
     MATRIZ_POR_DEFECTO, MESES_HASTA_REVISION, NIVELES, REGIMEN, Factor, MatrizRiesgo,
 )
 from .modelo import Caso, Cliente, Estado
+from .paises import iso, nombre as nombre_pais
 from .pep import PEP, RegistroPEP
 from .screening import Coincidencia
 
@@ -130,17 +131,44 @@ def _factores_cliente(
 
 
 def _factores_geograficos(cliente: Cliente, matriz: MatrizRiesgo) -> tuple[list[Factor], list[str]]:
+    """Factores por vinculacion geografica, sobre codigos ISO.
+
+    El padron viene en castellano, el GAFI publica en ingles y ARCA usa
+    nombres formales. Todo se normaliza a ISO antes de comparar; si no, el
+    factor geografico no detecta nada y nadie se entera.
+    """
     factores: list[Factor] = []
     elevadores: list[str] = []
 
-    paises = {_normalizar(cliente.pais_residencia), _normalizar(cliente.nacionalidad)}
-    paises.discard("")
+    crudos = [cliente.pais_residencia, cliente.nacionalidad]
+    paises = {c for c in (iso(p) for p in crudos) if c}
 
-    alto = paises & matriz.jurisdicciones_alto_riesgo
+    sin_reconocer = [p for p in crudos if p and iso(p) is None]
+    if sin_reconocer:
+        # No se asume bajo riesgo: se avisa. Un pais que la tabla no conoce es
+        # un pais que no se coteja contra ninguna lista.
+        factores.append(Factor(
+            "PAIS_NO_RECONOCIDO", "GEOGRAFICO",
+            f"pais sin normalizar, no cotejado contra listas: {', '.join(sin_reconocer)}",
+            matriz.puntos_pais_no_reconocido,
+        ))
+
+    contramedidas = paises & matriz.jurisdicciones_contramedidas
+    if contramedidas:
+        factores.append(Factor(
+            "JURISDICCION_CONTRAMEDIDAS", "GEOGRAFICO",
+            "jurisdiccion GAFI sujeta a contramedidas: "
+            + ", ".join(sorted(nombre_pais(c) for c in contramedidas)),
+            matriz.puntos_jurisdiccion_contramedidas,
+        ))
+        elevadores.append("JURISDICCION_ALTO_RIESGO")
+
+    alto = (paises & matriz.jurisdicciones_alto_riesgo) - contramedidas
     if alto:
         factores.append(Factor(
             "JURISDICCION_ALTO_RIESGO", "GEOGRAFICO",
-            f"vinculacion con jurisdiccion de alto riesgo: {', '.join(sorted(alto))}",
+            "jurisdiccion GAFI de alto riesgo, diligencia reforzada: "
+            + ", ".join(sorted(nombre_pais(c) for c in alto)),
             matriz.puntos_jurisdiccion_alto_riesgo,
         ))
         elevadores.append("JURISDICCION_ALTO_RIESGO")
@@ -149,16 +177,26 @@ def _factores_geograficos(cliente: Cliente, matriz: MatrizRiesgo) -> tuple[list[
     if monitoreo:
         factores.append(Factor(
             "JURISDICCION_MONITOREO", "GEOGRAFICO",
-            f"jurisdiccion bajo monitoreo intensificado: {', '.join(sorted(monitoreo))}",
+            "jurisdiccion GAFI bajo monitoreo intensificado: "
+            + ", ".join(sorted(nombre_pais(c) for c in monitoreo)),
             matriz.puntos_jurisdiccion_monitoreo,
         ))
 
-    nac = _normalizar(cliente.nacionalidad)
-    res = _normalizar(cliente.pais_residencia)
+    no_coop = paises & matriz.jurisdicciones_no_cooperantes
+    if no_coop:
+        factores.append(Factor(
+            "JURISDICCION_NO_COOPERANTE", "GEOGRAFICO",
+            "jurisdiccion no cooperante a fines fiscales: "
+            + ", ".join(sorted(nombre_pais(c) for c in no_coop)),
+            matriz.puntos_jurisdiccion_no_cooperante,
+        ))
+
+    nac = iso(cliente.nacionalidad)
+    res = iso(cliente.pais_residencia)
     if nac and res and nac != res:
         factores.append(Factor(
             "RESIDENCIA_DISTINTA", "GEOGRAFICO",
-            f"reside en {res} con nacionalidad {nac}",
+            f"reside en {nombre_pais(res)} con nacionalidad {nombre_pais(nac)}",
             matriz.puntos_residencia_distinta_nacionalidad,
         ))
 

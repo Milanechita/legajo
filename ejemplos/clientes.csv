@@ -11,3 +11,6 @@ CL009,Delta Servicios Financieros SA,ENTIDAD,CUIT,30-99887766-1,,,ARGENTINA,Casa
 CL010,Blue Harbour Trading Ltd,ENTIDAD,TAX_ID,77001122,,,PANAMA,Comercio exterior,no
 CL011,Grupo Cotizante SA,ENTIDAD,CUIT,30-55443322-9,,,ARGENTINA,Industria alimenticia,si
 CL012,Fernanda Ortiz,PERSONA,DNI,31222333,1987-02-14,ARGENTINA,ARGENTINA,Servicios profesionales,no
+CL013,Sark Trust Services,ENTIDAD,TAX_ID,55009911,,,Isla de Sark,Fideicomisos,no
+CL014,Nadia Haddad,PERSONA,PASAPORTE,LB884422,1982-09-03,Líbano,Argentina,Comercio,no
+CL015,Pyongyang Trading Co,ENTIDAD,TAX_ID,11223344,,,República Popular Democrática de Corea,Comercio exterior,no
