@@ -1,0 +1,9 @@
+cliente_id,nombre,tipo,documento_tipo,documento_numero,fecha_nacimiento,nacionalidad,pais_residencia,actividad
+CL001,Juan Pérez,PERSONA,DNI,28456123,1980-05-12,ARGENTINA,ARGENTINA,Comercio minorista
+CL002,Alireza Abbas,PERSONA,PASAPORTE,K1234567,1965-01-12,IRAN,IRAN,Importación
+CL003,Petroquímica del Sur S.A.,ENTIDAD,CUIT,30-71234567-8,,,ARGENTINA,Industria química
+CL004,Carlos A. Gomez Rivera,PERSONA,DNI,30111222,1978-03-04,ARGENTINA,ARGENTINA,Consultoría
+CL005,María González,PERSONA,DNI,27998877,1991-11-30,ARGENTINA,ARGENTINA,Servicios profesionales
+CL006,Khaled Shaikh Mohamed,PERSONA,PASAPORTE,ZZ9988776,1964-03-01,PAKISTAN,EMIRATOS,Comercio exterior
+CL007,Eastern Trading Co,ENTIDAD,TAX_ID,88991122,,,SINGAPUR,Logística
+CL008,Ana Beatriz Rodríguez,PERSONA,DNI,33445566,1985-07-19,ARGENTINA,ARGENTINA,Docencia
