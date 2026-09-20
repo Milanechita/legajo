@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from .config import POLITICA_POR_DEFECTO, Politica
 from .fuentes.base import Designado, Padron
+from .indice import Indice
 from .matcher import mejor_alias
 from .modelo import Caso, Cliente, Estado
 
@@ -85,13 +86,22 @@ def cotejar_cliente(
     cliente: Cliente,
     padron: Padron,
     politica: Politica = POLITICA_POR_DEFECTO,
+    indice: Indice | None = None,
 ) -> list[Coincidencia]:
-    """Coteja un cliente contra todo el padron."""
+    """Coteja un cliente contra el padron.
+
+    Con indice se compara solo contra los candidatos; sin indice, contra todo.
+    El resultado tiene que ser el mismo: el indice descarta trabajo, no
+    coincidencias. Que sea opcional permite verificar esa equivalencia
+    corriendo las dos formas sobre el mismo padron.
+    """
     docs_cliente = _claves_documento(cliente)
     es_entidad = cliente.tipo != "PERSONA"
     encontradas: list[Coincidencia] = []
 
-    for designado in padron.designados:
+    designados = indice.candidatos(cliente) if indice is not None else padron.designados
+
+    for designado in designados:
         # Coincidencia determinista: un documento identico no se discute.
         # Devuelve el mismo tipo de objeto que la via difusa, asi que aguas
         # abajo no hay que distinguir un caso del otro.
@@ -145,6 +155,7 @@ def screenear(
     padron: Padron,
     politica: Politica = POLITICA_POR_DEFECTO,
     actor: str = "sistema/screening",
+    usar_indice: bool = True,
 ) -> ResultadoScreening:
     """Ejecuta el screening sobre un lote de casos y avanza sus estados.
 
@@ -155,6 +166,10 @@ def screenear(
         clientes_evaluados=len(casos),
         designados_evaluados=len(padron),
     )
+
+    # El indice se construye una vez para todo el lote. Con un solo cliente
+    # no se amortiza, asi que ahi conviene la busqueda directa.
+    indice = Indice(padron) if usar_indice and len(casos) > 1 else None
 
     for caso in casos:
         caso.transicionar(Estado.SCREENING, actor, "inicio de cotejo contra listas")
@@ -167,7 +182,7 @@ def screenear(
             designados_evaluados=len(padron),
         )
 
-        coincidencias = cotejar_cliente(caso.cliente, padron, politica)
+        coincidencias = cotejar_cliente(caso.cliente, padron, politica, indice)
         resultado.coincidencias.extend(coincidencias)
 
         if not coincidencias:

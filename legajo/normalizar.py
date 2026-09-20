@@ -8,6 +8,7 @@ que un matcher mediocre sobre nombres bien normalizados.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 import unicodedata
 
 # Sufijos societarios. Se eliminan porque "ACME SA" y "ACME S.A." y "ACME"
@@ -40,6 +41,7 @@ def sin_acentos(texto: str) -> str:
     return "".join(c for c in descompuesto if not unicodedata.combining(c))
 
 
+@lru_cache(maxsize=200_000)
 def normalizar(nombre: str, *, es_entidad: bool = False) -> str:
     """Devuelve la forma canonica de un nombre para comparacion.
 

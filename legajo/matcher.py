@@ -16,6 +16,12 @@ from .normalizar import normalizar
 _PESO_PREFIJO = 0.1
 _MAX_PREFIJO = 4
 
+# Cuanto pesa la cobertura del nombre corto frente a la del largo.
+# Por encima de 0.65 los designados de una sola palabra vuelven a cruzar el
+# umbral; por debajo de 0.5 se empiezan a perder nombres incompletos, que son
+# el caso habitual. El valor esta calibrado contra ambos extremos.
+PESO_COBERTURA_CORTA = 0.60
+
 
 def jaro(a: str, b: str) -> float:
     """Similitud de Jaro entre dos cadenas. Rango [0, 1]."""
@@ -86,14 +92,26 @@ def jaro_winkler(a: str, b: str) -> float:
 def score_nombres(consulta: str, candidato: str, *, es_entidad: bool = False) -> float:
     """Puntaje de similitud entre dos nombres. Rango [0, 100].
 
-    Compara por tokens, no como cadena unica. Esto hace el cotejo
+    Compara por tokens, no como cadena unica. Eso hace el cotejo
     independiente del orden: "PEREZ JUAN" y "JUAN PEREZ" son el mismo nombre,
     y el orden apellido-nombre varia entre fuentes.
 
-    Los nombres incompletos son la regla, no la excepcion: el padron tiene
-    "JUAN PEREZ" y la lista tiene "JUAN CARLOS PEREZ GOMEZ". Por eso se
-    promedia sobre el conjunto mas corto y la penalizacion por tokens
-    faltantes es leve.
+    La cobertura se mide en las dos direcciones, y esa es la parte que importa.
+    Medir solo cuanto del nombre corto queda explicado produce falsos
+    positivos sistematicos contra designados de una sola palabra, que son
+    muchos entre las organizaciones: "Ajnad" queda explicado por "Ana", pero
+    "Ana Rodriguez Diaz" queda explicado apenas en un tercio, y esa segunda
+    mitad de la evidencia no se puede ignorar.
+
+    Las dos direcciones salen de la misma matriz de comparaciones: los maximos
+    por fila dan una cobertura y los maximos por columna dan la otra.
+    Calcularlas por separado duplicaria las llamadas a Jaro-Winkler, que es el
+    grueso del costo del screening.
+
+    Se pondera mas la cobertura del nombre corto porque los nombres
+    incompletos son la regla: el padron trae "Juan Perez" y la lista "Juan
+    Carlos Perez Gomez". Los tokens que sobran restan, pero no tanto como
+    para perder la coincidencia.
     """
     na = normalizar(consulta, es_entidad=es_entidad)
     nb = normalizar(candidato, es_entidad=es_entidad)
@@ -106,16 +124,15 @@ def score_nombres(consulta: str, candidato: str, *, es_entidad: bool = False) ->
     ta, tb = na.split(), nb.split()
     corto, largo = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
 
-    total = sum(max(jaro_winkler(t, u) for u in largo) for t in corto)
-    base = total / len(corto)
+    matriz = [[jaro_winkler(a, b) for b in largo] for a in corto]
 
-    # Penalizacion por diferencia de cantidad de tokens: leve y acotada.
-    # Perder un match por un segundo nombre ausente seria un falso negativo,
-    # que en screening es el error grave.
-    ratio = len(corto) / len(largo)
-    ajustado = base * (0.85 + 0.15 * ratio)
+    cobertura_corto = sum(max(fila) for fila in matriz) / len(corto)
+    cobertura_largo = sum(max(col) for col in zip(*matriz)) / len(largo)
 
-    return round(ajustado * 100, 1)
+    combinado = (cobertura_corto * PESO_COBERTURA_CORTA
+                 + cobertura_largo * (1 - PESO_COBERTURA_CORTA))
+
+    return round(combinado * 100, 1)
 
 
 def mejor_alias(consulta: str, nombres: list[str], *, es_entidad: bool = False) -> tuple[float, str]:

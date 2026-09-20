@@ -673,6 +673,101 @@ nivel quedó igual, el sistema de calificación no está funcionando.
 
 No impide presentar el reporte, pero conviene resolverlo antes.
 
+### El score se mide en las dos direcciones
+
+El matcher tenía un defecto que no encontré leyendo el código sino midiendo.
+
+El puntaje promediaba sobre el conjunto de tokens más corto, es decir medía
+cuánto del nombre corto quedaba explicado por el largo. Con eso, un designado
+de una sola palabra matcheaba contra casi cualquier nombre:
+
+```
+79.2   "Ana Rodriguez Diaz"  vs  "Ajnad"     ← cruzaba el umbral de 78
+49.2   "Juan Perez Gomez"    vs  "Khalid Sheikh Mohammed"
+```
+
+"Ajnad" queda bien explicado por "Ana". Pero "Ana Rodriguez Diaz" queda
+explicado en un tercio, y esa segunda mitad de la evidencia no se puede
+ignorar. El padrón tiene 216 designados de una sola palabra, muchos de ellos
+organizaciones, así que el defecto era sistemático.
+
+Midiendo las dos coberturas y combinándolas, sobre 250 nombres argentinos
+comunes contra los designados de un token:
+
+```
+falsos positivos     87  ->  30
+verdaderos positivos  5/5 ->  5/5
+```
+
+El peso de cada lado está calibrado contra los dos extremos. Por encima de
+0.65 los designados de una palabra vuelven a cruzar el umbral; por debajo de
+0.5 se pierden los nombres incompletos, que son el caso habitual.
+
+### Las dos coberturas salen de la misma matriz
+
+Calcularlas por separado duplicaba las llamadas a Jaro-Winkler, que según el
+profile son el 43% del tiempo de screening. Los máximos por fila dan una
+cobertura y los máximos por columna dan la otra.
+
+Con eso, la corrección salió gratis: el screening tarda lo mismo que antes de
+medir las dos direcciones.
+
+### El índice descarta trabajo, no coincidencias
+
+El screening es cuadrático: cada cliente contra cada nombre y alias del
+padrón. Proyectado a 50.000 clientes son unas dos horas con el padrón de
+ejemplo, y unas 37 con las listas completas.
+
+El índice tiene dos caminos porque el matcher tiene dos caminos:
+
+```
+documento  ->  diccionario exacto, O(1)
+nombre     ->  trigramas de cada token
+```
+
+Mezclarlos perdería coincidencias. Un cliente que coincide por número de
+pasaporte con un designado de nombre completamente distinto es una
+coincidencia válida, y un índice construido sobre nombres la descartaría sin
+dejar rastro.
+
+Los trigramas son **de cada token**, no de la cadena entera, porque el matcher
+compara token contra token. Un índice sobre la cadena completa mide otra cosa
+y en el margen discrepan.
+
+### El mínimo de trigramas es uno, y el número salió de medir
+
+Probé exigir dos, tres y más. Filtran mejor y pierden coincidencias:
+
+```
+mínimo   selectividad   recall
+   2         42%         99.6%   pierde
+   1         56%          100%
+```
+
+Pares como `RAHMAN` contra `EMRAAN` comparten un solo trigrama y aun así
+puntúan por encima del umbral. Jaro-Winkler y el solapamiento de trigramas
+miden cosas distintas, y no hay umbral que los haga equivalentes.
+
+Entre filtrar mejor y no perder nada, en screening gana no perder nada.
+
+### Lo que dijo el profile
+
+Empecé construyendo el índice porque era el problema interesante. El profile
+mostró otra cosa:
+
+```
+jaro          43%   ← 3.194.640 llamadas para 60 clientes
+normalizar    15%   ← los mismos 2.681 nombres, una vez por cliente
+```
+
+Normalizar el padrón de nuevo para cada cliente es trabajo repetido que no
+cambia nunca. Resultado combinado, proyectado a 50.000 clientes:
+
+```
+antes    118 min
+después   64 min     con recall del 100%
+```
+
 ### Entra y sale por Excel
 
 El equipo de cumplimiento trabaja en Excel. Una herramienta que lo obligue a
@@ -743,7 +838,7 @@ que auditar, versionar y justificar. La única dependencia del proyecto es
 python -m pytest tests/ -q
 ```
 
-Son 179 y están escritas como escenarios de dominio, no como pruebas de
+Son 200 y están escritas como escenarios de dominio, no como pruebas de
 funciones sueltas. Las que importan:
 
 - El umbral del 10% se aplica a la suma de caminos y no a cada arista
@@ -791,6 +886,11 @@ funciones sueltas. Las que importan:
 - Un borrador fuera de plazo deja constancia de la demora
 - Una justificada sin análisis documentado se marca como hallazgo
 - Una resolución en blanco no se toma como justificada
+- Un designado de una sola palabra no matchea contra cualquier nombre
+- El orden de los tokens sigue siendo irrelevante y los sufijos societarios se ignoran
+- El índice devuelve exactamente lo mismo que la búsqueda exhaustiva
+- Una coincidencia por documento entra aunque el nombre no se parezca en nada
+- Un padrón vacío no rompe el índice
 
 ---
 
@@ -852,6 +952,11 @@ Lo que conviene saber antes de usarla:
 - El nivel de riesgo no se recalcula con el resultado del monitoreo. El
   borrador marca la inconsistencia pero la actualización del perfil sigue
   siendo manual
+- El índice acelera 1.5x sobre el padrón de ejemplo. Con listas más grandes
+  debería rendir más, pero eso no está medido: hace falta el volcado completo
+  de OFAC para saberlo
+- No hay set de casos etiquetados, así que "calibrado para recall" sigue
+  siendo una afirmación sin métrica de precisión y recall detrás
 - El monitoreo trabaja sobre la operatoria que se le da. No se conecta a
   ningún core bancario: la extracción es responsabilidad de quien lo use
 - La triangulación de fondos entre cuentas vinculadas no está implementada.
