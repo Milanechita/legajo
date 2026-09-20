@@ -4,8 +4,9 @@ Herramienta para automatizar el circuito de análisis PLA/FT. Está pensada para
 equipos de cumplimiento que hoy resuelven el cotejo de listas y el armado del
 legajo con planillas y búsquedas manuales.
 
-**Estado actual: etapas 1, 2 y 3 de 5.** Screening contra listas, resolución de
-beneficiario final, scoring de riesgo y monitoreo transaccional.
+**Estado actual: etapas 1 a 4 de 5.** Screening contra listas, resolución de
+beneficiario final, scoring de riesgo, monitoreo transaccional, congelamiento
+administrativo y exposición sancionatoria.
 
 ---
 
@@ -36,7 +37,7 @@ ALTA ──▶ SCREENING ──▶ SCORING EBR ──▶ ANÁLISIS ──▶ ┬
 | 1 | Cotejo contra listas OFAC, ONU y RePET | ✅ implementada |
 | 2 | Beneficiario final y scoring EBR | ✅ implementada |
 | 3 | Perfil declarado contra operado real | ✅ implementada |
-| 4 | Motor de alertas y expediente consolidado | pendiente |
+| 4 | Régimen de reporte, congelamiento y exposición | ✅ implementada |
 | 5 | Export e insumo de ROS | pendiente |
 
 ---
@@ -65,7 +66,6 @@ python -m legajo circuito \
   --peps            ejemplos/peps.csv \
   --operaciones     ejemplos/operaciones.csv \
   --perfiles        ejemplos/perfiles.csv \
-  --umbral-reporte  30000000 \
   --salida          informe_circuito.xlsx
 ```
 
@@ -146,8 +146,8 @@ avisa para que nadie piense que el programa está duplicando.
 
 ## Entrada y salida
 
-Entra CSV o XLSX, sale un XLSX de seis hojas: Resumen, Coincidencias,
-Expediente, Beneficiario final, Riesgo y Alertas.
+Entra CSV o XLSX, sale un XLSX de ocho hojas: Resumen, Coincidencias,
+Expediente, Beneficiario final, Riesgo, Alertas, Congelamiento y Exposición.
 
 ### Padrón de clientes
 
@@ -482,6 +482,107 @@ reabre.
 
 La alternativa era no cerrar nunca ningún caso, que es peor.
 
+### El plazo no es un atributo de la alerta
+
+La Res. UIF 56/2024 fija tres plazos y no son intercambiables:
+
+| Régimen | Plazo |
+|---------|-------|
+| Lavado de activos | 24hs desde que se concluye, tope de 90 días corridos desde la operación |
+| Financiación del terrorismo | 24hs desde la operación |
+| Financiamiento de la proliferación | 24hs desde la operación |
+
+La diferencia entre "desde que se concluye" y "desde la operación" es de
+fondo. En lavado el reloj arranca con el análisis y tiene un techo absoluto.
+En terrorismo y proliferación arranca con la operación, sin análisis previo
+que valga.
+
+Por eso el plazo se deriva del régimen, y el régimen se deriva de por qué
+disparó la alerta. Un campo `plazo_dias` que alguien carga a mano es un campo
+que alguien va a cargar mal, y el error recién se descubre cuando la UIF
+pregunta por qué un reporte de terrorismo salió a los tres meses.
+
+### El régimen sale del comité, no de la lista
+
+La Lista Consolidada de la ONU mezcla designaciones de terrorismo (comité
+1267) con las de proliferación (1718 para Corea del Norte, 1737 para Irán).
+Son dos regímenes distintos con dos tipos de reporte distintos. Clasificar por
+lista de origen los confunde.
+
+### Detectar tarde no regala plazo
+
+El tope de 90 días corre desde que la operación fue realizada, no desde que se
+detectó. Un análisis que empieza el día 89 tiene un día, no noventa.
+
+Esto salió al correr el motor sobre los fixtures: operaciones de marzo
+detectadas en septiembre ya tienen el plazo vencido. El sistema lo marca en
+rojo en vez de mostrar noventa días por delante, porque una ventana cerrada es
+un problema distinto de una alerta pendiente.
+
+### Un congelamiento no es una alerta
+
+Cuando hay coincidencia firme con una persona designada, lo que sigue es otro
+proceso:
+
+```
+congelar sin demora e inaudita parte
+informar inmediatamente a la UIF
+reportar dentro de 24 horas
+cotejar el resto de la base de clientes
+inmovilizar lo que ingrese después, mientras la medida siga vigente
+no informarle al cliente
+```
+
+Una alerta de monitoreo se analiza, se justifica o no, y puede cerrarse sin
+reportar. Un congelamiento no admite análisis previo: primero se inmoviliza y
+después se explica.
+
+La obligación es una por cliente y por régimen, no una por asiento de lista.
+Alguien designado en tres listas bajo el mismo comité genera un congelamiento
+y no tres, porque se inmoviliza una vez. Dos regímenes distintos sí son dos
+obligaciones, porque el tipo de reporte cambia.
+
+### Los pasos salen sin cumplir
+
+La herramienta identifica la obligación y qué hay que hacer. No congela nada.
+Marcar los pasos como cumplidos de oficio sería documentar un cumplimiento que
+no ocurrió.
+
+### La hoja de congelamiento lleva advertencia de reserva
+
+La norma obliga a abstenerse de informar al cliente o a terceros los
+antecedentes de la resolución. Solo puede decirse que los bienes están
+congelados en virtud del art. 6 de la Ley 26.734.
+
+Un informe que circule sin esa marca es un aviso esperando ocurrir, y avisarle
+al cliente convierte un cumplimiento en un problema penal.
+
+### Una alerta sin su costo es un pendiente más en una cola
+
+La Res. UIF 129/2024 art. 35 fija la liquidación del procedimiento abreviado:
+
+```
+no reportar un ROS ..... 1 vez el valor total de la operación
+incumplimiento total ... 30 módulos
+incumplimiento parcial . 25 módulos
+```
+
+El módulo vale $54.140 según la Res. UIF 95/2025. No reportar no cuesta una
+multa fija ni un porcentaje: cuesta el monto entero de la operación.
+
+Calcular eso convierte cada alerta en un número. Una alerta suelta es un
+pendiente más; una alerta con su exposición al lado es un argumento que un
+directorio entiende, y es lo que consigue que el área de cumplimiento tenga
+presupuesto.
+
+La exposición toma el mayor monto por cliente y no la suma, porque las
+tipologías se superponen sobre las mismas operaciones y sumarlas contaría el
+mismo dinero varias veces.
+
+Es una estimación de exposición y no un cálculo de multa. La sanción efectiva
+la determina la UIF en sumario, ponderando naturaleza del incumplimiento,
+tamaño de la organización, antecedentes, volumen de negocios y reincidencia.
+
 ### Entra y sale por Excel
 
 El equipo de cumplimiento trabaja en Excel. Una herramienta que lo obligue a
@@ -525,6 +626,9 @@ legajo/
 ├── riesgo.py          evaluador EBR
 ├── operaciones.py     operatoria, perfil transaccional y ventanas
 ├── alertas.py         catálogo de tipologías y motor de monitoreo
+├── regimen.py         LA, FT y FPADM: plazos y derivación
+├── congelamiento.py   obligaciones de congelamiento administrativo
+├── sanciones.py       módulo, liquidación y exposición estimada
 ├── io_planilla.py     lectura CSV/XLSX y export a Excel
 ├── cli.py             interfaz de línea de comandos
 └── fuentes/
@@ -548,7 +652,7 @@ que auditar, versionar y justificar. La única dependencia del proyecto es
 python -m pytest tests/ -q
 ```
 
-Son 127 y están escritas como escenarios de dominio, no como pruebas de
+Son 155 y están escritas como escenarios de dominio, no como pruebas de
 funciones sueltas. Las que importan:
 
 - El umbral del 10% se aplica a la suma de caminos y no a cada arista
@@ -580,6 +684,15 @@ funciones sueltas. Las que importan:
 - La recalibración del perfil se sugiere sin modificar el original
 - Una regla apagada no corre pero explica por qué
 - Una alerta reabre un legajo cerrado
+- El umbral de reporte sale de la norma y no de un número inventado
+- Terrorismo y proliferación vencen en 24hs y lavado tiene tope de 90 días
+- Detectar el día 89 deja un día de plazo, no noventa
+- Una alerta detectada pasado el tope figura como vencida
+- Tres coincidencias del mismo régimen son una sola obligación de congelamiento
+- Dos regímenes distintos sí son dos obligaciones
+- Una coincidencia débil no congela los bienes de nadie
+- Los pasos del congelamiento salen sin cumplir
+- La exposición toma el mayor monto por cliente y no la suma
 
 ---
 
@@ -594,7 +707,12 @@ funciones sueltas. Las que importan:
 - **Decreto 918/2012 y 489/2019**, creación del RePET
 - **Decreto 862/2019**, texto según **Decreto 398/2026**, jurisdicciones no
   cooperantes a fines de transparencia fiscal
-- **Res. UIF 199/2024**, operaciones inusuales y sospechosas
+- **Res. UIF 56/2024**, plazos de reporte y definición de operación inusual
+- **Res. UIF 78/2025**, umbrales de reporte en efectivo, 40 SMVM
+- **Res. UIF 84/2023**, adopción del SMVM como parámetro de actualización
+- **Res. UIF 95/2025**, valor del módulo
+- **Res. UIF 129/2024**, liquidación del procedimiento abreviado
+- **Ley 26.734 art. 6** y **Decreto 918/2012**, congelamiento administrativo
 - **Recomendaciones GAFI**, enfoque basado en riesgo
 
 ---
@@ -622,8 +740,14 @@ Lo que conviene saber antes de usarla:
 - Las listas de `matriz.py` están al plenario GAFI del 19 de junio de 2026 y
   al Decreto 398/2026. Hay que actualizarlas después de cada plenario
 - El SMVM está al valor de septiembre de 2026. Se fija dos veces al año
-- El umbral de reporte se pasa por parámetro y no viene cargado. Lo fija la
-  UIF por resolución y hay que tomarlo de la vigente
+- El umbral de reporte viene cargado en 40 SMVM según la Res. UIF 78/2025.
+  Si la resolución cambia, hay que actualizarlo en `config.py`
+- El valor del módulo se actualiza por ejercicio presupuestario. Está al de
+  la Res. UIF 95/2025
+- La exposición sancionatoria es una estimación del escenario de omisión
+  total. No es un pronóstico ni sirve para negociar con la UIF
+- El sistema identifica la obligación de congelamiento. No congela nada ni
+  emite ningún reporte: eso lo hace una persona por los canales de la UIF
 - El monitoreo trabaja sobre la operatoria que se le da. No se conecta a
   ningún core bancario: la extracción es responsabilidad de quien lo use
 - La triangulación de fondos entre cuentas vinculadas no está implementada.

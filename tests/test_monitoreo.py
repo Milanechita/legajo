@@ -267,9 +267,23 @@ def test_la_alerta_trae_el_contenido_minimo_del_registro():
     assert fila["decision_final"] == ""
 
 
-def test_la_alerta_lleva_plazo_de_analisis():
+def test_el_plazo_corre_desde_la_operacion_y_no_desde_la_deteccion():
+    """Detectar tarde no regala plazo.
+
+    El tope de 90 dias corre desde que la operacion fue realizada. Si se
+    detecta pasado ese plazo, la ventana de reporte ya esta cerrada y el
+    sistema tiene que decirlo en vez de mostrar noventa dias por delante.
+    """
     alerta = correr([op(i, 28_000_000) for i in range(5)])[0]
-    assert alerta.vence > alerta.generada
+    assert alerta.fecha_operacion == INICIO
+    assert alerta.vence <= INICIO + timedelta(days=90)
+
+
+def test_una_alerta_detectada_tarde_figura_como_vencida():
+    alerta = correr([op(i, 28_000_000) for i in range(5)])[0]
+    # Los fixtures son de marzo y la corrida es posterior a junio.
+    assert alerta.vencida
+    assert alerta.dias_restantes < 0
 
 
 # --- circuito --------------------------------------------------------------

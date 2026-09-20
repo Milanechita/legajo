@@ -12,19 +12,23 @@ from pathlib import Path
 
 from .alertas import monitorear, reglas_inactivas
 from .beneficiario import resolver
-from .config import POLITICA_POR_DEFECTO, Politica, parametros_con_listas
+from .config import (
+    POLITICA_POR_DEFECTO, Politica, parametros_con_listas, umbral_reporte_vigente,
+)
+from .congelamiento import obligaciones
 from .fuentes.base import Padron
 from .fuentes.descarga import actualizar
 from .fuentes.ofac import ParserOFAC, incorporar_alias
 from .fuentes.onu import ParserONU
 from .fuentes.repet import ParserRePET
 from .io_planilla import (
-    agregar_hoja_alertas, agregar_hojas_etapa2, exportar, leer_estructura,
-    leer_operaciones, leer_padron, leer_peps, leer_perfiles,
+    agregar_hoja_alertas, agregar_hojas_etapa2, agregar_hojas_etapa4, exportar,
+    leer_estructura, leer_operaciones, leer_padron, leer_peps, leer_perfiles,
 )
 from .matriz import MATRIZ_POR_DEFECTO
 from .modelo import Caso, Estado
 from .operaciones import agrupar
+from .sanciones import estimar
 from .riesgo import evaluar_casos
 from .screening import screenear
 
@@ -156,7 +160,7 @@ def comando_circuito(args: argparse.Namespace) -> int:
     casos = [Caso(caso_id=f"C{i:05d}", cliente=c) for i, c in enumerate(clientes, 1)]
 
     # --- Etapa 1 ---
-    print(f"\n[1/3] Screening: {len(clientes)} cliente(s) contra {len(padron)} designado(s)")
+    print(f"\n[1/4] Screening: {len(clientes)} cliente(s) contra {len(padron)} designado(s)")
     resultado = screenear(casos, padron, politica, actor=args.actor)
     print(f"      {len(resultado.coincidencias)} coincidencia(s), "
           f"{sum(1 for c in casos if c.estado is Estado.ESCALADO)} escalado(s)")
@@ -166,7 +170,7 @@ def comando_circuito(args: argparse.Namespace) -> int:
         por_cliente.setdefault(c.cliente_id, []).append(c)
 
     # --- Etapa 2 ---
-    print("\n[2/3] Beneficiario final y scoring EBR")
+    print("\n[2/4] Beneficiario final y scoring EBR")
 
     estructura = leer_estructura(args.societaria, clientes) if args.societaria else None
     resoluciones = {}
@@ -196,14 +200,17 @@ def comando_circuito(args: argparse.Namespace) -> int:
     perfiles: dict[str, object] = {}
 
     if args.operaciones:
-        print("\n[3/3] Monitoreo transaccional")
+        print("\n[3/4] Monitoreo transaccional")
         operatorias = agrupar(leer_operaciones(args.operaciones))
         perfiles = leer_perfiles(args.perfiles) if args.perfiles else {}
 
         parametros = parametros_con_listas(umbral_reporte=args.umbral_reporte)
-        if args.umbral_reporte <= 0:
+        if parametros.umbral_reporte <= 0:
             print("      aviso: sin umbral de reporte, la regla de fraccionamiento no corre",
                   file=sys.stderr)
+        else:
+            origen = "parametro" if args.umbral_reporte else "40 SMVM, Res. 78/2025"
+            print(f"      umbral de reporte: ${parametros.umbral_reporte:,.0f} ({origen})")
 
         alertas = monitorear(operatorias, perfiles, parametros)
         total_ops = sum(o.cantidad for o in operatorias.values())
@@ -237,10 +244,41 @@ def comando_circuito(args: argparse.Namespace) -> int:
                     + (" (reapertura del legajo)" if origen == "CERRADO" else ""),
                 )
 
-    # El expediente se escribe recien ahora, con la evidencia de las tres etapas.
+    # --- Etapa 4 ---
+    nombres = {c.cliente.cliente_id: c.cliente.nombre for c in casos}
+    congelamientos = obligaciones(
+        resultado.coincidencias, nombres, politica.umbral_probable
+    )
+
+    if congelamientos:
+        print(f"\n[4/4] Congelamiento administrativo")
+        print(f"      {len(congelamientos)} obligacion(es), reporte dentro de 24hs")
+        for c in congelamientos:
+            caso = por_caso.get(c.cliente_id) if args.operaciones else None
+            print(f"      {c.cliente_id}  {c.resumen()}")
+
+    por_cliente_caso = {c.cliente.cliente_id: c for c in casos}
+    for c in congelamientos:
+        caso = por_cliente_caso.get(c.cliente_id)
+        if caso is None:
+            continue
+        caso.registrar(
+            args.actor, "CONGELAMIENTO_REQUERIDO",
+            regimen=c.regimen.value, lista=c.lista, designado=c.designado,
+            norma=c.norma, plazo="24 horas",
+            reserva="prohibido informar al cliente",
+        )
+
+    sin_perfil = [cid for cid, lista in alertas.items()
+                  if any(a.codigo == "SIN_PERFIL" for a in lista)]
+    sin_bf = [cid for cid, r in resoluciones.items() if not r.identificado]
+    exposicion = estimar(alertas, congelamientos, nombres, sin_perfil, sin_bf)
+
+    # El expediente se escribe recien ahora, con la evidencia de las cuatro etapas.
     ruta = exportar(resultado, casos, args.salida, politica.umbral_probable)
     agregar_hojas_etapa2(ruta, resoluciones, evaluaciones, casos)
     agregar_hoja_alertas(ruta, alertas, casos, evaluaciones, perfiles)
+    agregar_hojas_etapa4(ruta, congelamientos, exposicion)
 
     conteo = {"ALTO": 0, "MEDIO": 0, "BAJO": 0}
     for ev in evaluaciones.values():
@@ -268,6 +306,18 @@ def comando_circuito(args: argparse.Namespace) -> int:
               f"sobre {len(alertas)} cliente(s), {criticas} de severidad alta")
         for codigo, n in conteo.most_common():
             print(f"    {codigo:28} {n:3}")
+
+        vencidas = [a for lista in alertas.values() for a in lista if a.vencida]
+        if vencidas:
+            print(f"\n  ATENCION: {len(vencidas)} alerta(s) con el plazo de reporte "
+                  f"ya vencido")
+            print("  El tope de 90 dias corre desde la operacion, no desde la deteccion.")
+
+    if exposicion.cargos:
+        print(f"\n  Exposicion sancionatoria estimada: ${exposicion.total:,.0f}")
+        print(f"    por falta de reporte      ${exposicion.por_falta_de_reporte:>16,.0f}")
+        print(f"    por otros incumplimientos ${exposicion.por_incumplimientos:>16,.0f}")
+        print("    (estimacion, no calculo de multa: la fija la UIF en sumario)")
 
     print(f"\nInforme: {ruta}")
     return 0
@@ -316,14 +366,16 @@ def main(argv: list[str] | None = None) -> int:
     scr.set_defaults(func=comando_screening)
 
     cir = sub.add_parser("circuito",
-                         help="etapas 1 a 3: screening, beneficiario final, riesgo y monitoreo")
+                         help="etapas 1 a 4: screening, beneficiario final, riesgo, "
+                              "monitoreo, congelamiento y exposicion")
     comunes(cir)
     cir.add_argument("--societaria", help="CSV o XLSX con el grafo societario")
     cir.add_argument("--peps", help="CSV de declaraciones juradas de condicion PEP")
     cir.add_argument("--operaciones", help="CSV o XLSX con la operatoria de los clientes")
     cir.add_argument("--perfiles", help="CSV o XLSX con los perfiles transaccionales")
-    cir.add_argument("--umbral-reporte", type=float, default=0.0,
-                     help="umbral de reporte en pesos, para detectar fraccionamiento")
+    cir.add_argument("--umbral-reporte", type=float, default=None,
+                     help="umbral de reporte en pesos; por defecto, 40 SMVM segun "
+                          "Res. UIF 78/2025")
     cir.add_argument("--salida", default="informe_circuito.xlsx")
     cir.set_defaults(func=comando_circuito)
 

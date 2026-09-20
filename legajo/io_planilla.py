@@ -473,6 +473,8 @@ def leer_perfiles(ruta: str | Path) -> dict[str, Perfil]:
     return perfiles
 
 
+_VENCIDO = PatternFill("solid", start_color="D96459")
+
 _SEVERIDAD_RELLENO = {
     "ALTA": PatternFill("solid", start_color="F4B6B0"),
     "MEDIA": PatternFill("solid", start_color="FFE599"),
@@ -501,9 +503,9 @@ def agregar_hoja_alertas(
     hoja = libro.create_sheet("Alertas")
     columnas = [
         "cliente_id", "cliente", "nivel_riesgo", "perfil_declarado",
-        "tipo_inusualidad", "severidad", "descripcion", "monto_involucrado",
-        "operaciones", "metodologia", "generada", "vence",
-        "medidas_adoptadas", "decision_final",
+        "tipo_inusualidad", "regimen", "severidad", "descripcion",
+        "monto_involucrado", "operaciones", "metodologia", "generada",
+        "vence", "estado_plazo", "medidas_adoptadas", "decision_final",
     ]
     _escribir_encabezado(hoja, columnas)
 
@@ -522,12 +524,15 @@ def agregar_hoja_alertas(
             f"${perfil.monto_mensual:,.0f}/mes, {perfil.operaciones_mensuales} op."
             if perfil and perfil.declarado else "no declarado"
         )
+        estado = ("PLAZO VENCIDO" if a.vencida
+                  else f"{a.dias_restantes} dia(s)")
         hoja.append([
             cliente_id,
             nombres.get(cliente_id, ""),
             ev.nivel if ev else "",
             resumen_perfil,
             a.codigo,
+            a.regimen.value,
             a.severidad,
             a.descripcion,
             a.monto_involucrado,
@@ -535,22 +540,105 @@ def agregar_hoja_alertas(
             a.metodologia,
             a.generada.isoformat(),
             a.vence.isoformat(),
+            estado,
             "",
             "",
         ])
-        relleno = _SEVERIDAD_RELLENO.get(a.severidad)
+        relleno = _VENCIDO if a.vencida else _SEVERIDAD_RELLENO.get(a.severidad)
         for celda in hoja[hoja.max_row]:
             celda.font = _CUERPO
             if relleno:
                 celda.fill = relleno
-        hoja.cell(row=hoja.max_row, column=8).number_format = "#,##0"
+        hoja.cell(row=hoja.max_row, column=9).number_format = "#,##0"
 
     if not filas:
         hoja.append(["sin alertas de monitoreo"] + [""] * (len(columnas) - 1))
         for celda in hoja[hoja.max_row]:
             celda.font = _CUERPO
 
-    _ajustar_anchos(hoja, [12, 26, 9, 26, 26, 10, 72, 16, 70, 52, 12, 12, 26, 26])
+    _ajustar_anchos(hoja, [12, 26, 9, 26, 26, 8, 10, 72, 16, 70, 52, 12, 12, 15, 26, 26])
+
+    libro.save(ruta)
+    return ruta
+
+
+def agregar_hojas_etapa4(
+    ruta: str | Path,
+    congelamientos: list,
+    exposicion,
+) -> Path:
+    """Agrega las hojas de congelamiento y exposicion sancionatoria.
+
+    La hoja de congelamiento lleva una advertencia de reserva en la primera
+    fila. No es un adorno: la norma obliga a abstenerse de informar al cliente
+    los antecedentes de la resolucion, y un informe que circule sin esa marca
+    es un aviso esperando ocurrir.
+    """
+    ruta = Path(ruta)
+    libro = load_workbook(ruta)
+
+    # --- Congelamiento ---
+    hoja = libro.create_sheet("Congelamiento")
+    aviso = ("CONFIDENCIAL. Art. 21 inc. c) y 22 Ley 25.246. Prohibido informar al "
+             "cliente o a terceros los antecedentes de la medida.")
+    hoja.append([aviso])
+    hoja["A1"].font = Font(name=FUENTE, bold=True, color="9C0006", size=10)
+    hoja["A1"].fill = PatternFill("solid", start_color="FFC7CE")
+
+    columnas = ["cliente_id", "cliente", "regimen", "lista", "designado",
+                "id_origen", "score", "criterio", "detectado", "norma", "paso",
+                "obligacion", "cumplido"]
+    hoja.append(columnas)
+    for celda in hoja[2]:
+        celda.font = _ENCABEZADO
+        celda.fill = _RELLENO_ENCABEZADO
+        celda.alignment = Alignment(vertical="center", wrap_text=True)
+    hoja.freeze_panes = "A3"
+
+    for c in congelamientos:
+        for i, paso in enumerate(c.pasos, start=1):
+            hoja.append([
+                c.cliente_id, c.cliente, c.regimen.value, c.lista, c.designado,
+                c.id_origen, c.score, c.criterio, c.detectado.isoformat(),
+                c.norma, f"{i}. {paso.codigo}", paso.descripcion,
+                "SI" if paso.cumplido else "",
+            ])
+            for celda in hoja[hoja.max_row]:
+                celda.font = _CUERPO
+
+    if not congelamientos:
+        hoja.append(["sin obligaciones de congelamiento"] + [""] * (len(columnas) - 1))
+        for celda in hoja[hoja.max_row]:
+            celda.font = _CUERPO
+
+    _ajustar_anchos(hoja, [12, 26, 9, 16, 30, 12, 8, 12, 12, 44, 26, 90, 10])
+
+    # --- Exposicion ---
+    hoja = libro.create_sheet("Exposicion")
+    _escribir_encabezado(hoja, ["concepto", "materia", "modulos", "monto", "fundamento"])
+
+    for cargo in sorted(exposicion.cargos, key=lambda c: -c.monto):
+        hoja.append([cargo.concepto, cargo.materia, cargo.modulos or "",
+                     cargo.monto, cargo.fundamento])
+        for celda in hoja[hoja.max_row]:
+            celda.font = _CUERPO
+        hoja.cell(row=hoja.max_row, column=4).number_format = "#,##0"
+
+    hoja.append([])
+    hoja.append(["TOTAL ESTIMADO", "", "", exposicion.total, ""])
+    for celda in hoja[hoja.max_row]:
+        celda.font = Font(name=FUENTE, bold=True, size=10)
+    hoja.cell(row=hoja.max_row, column=4).number_format = "#,##0"
+
+    hoja.append([])
+    hoja.append([
+        f"Modulo ${exposicion.modulo_aplicado:,.0f} vigente desde "
+        f"{exposicion.modulo_vigencia.isoformat()}. Estimacion de exposicion, no "
+        f"calculo de multa: la sancion efectiva la determina la UIF en sumario."
+    ])
+    hoja[f"A{hoja.max_row}"].font = Font(name=FUENTE, italic=True, size=9)
+
+    _ajustar_anchos(hoja, [46, 34, 10, 18, 56])
 
     libro.save(ruta)
     return ruta

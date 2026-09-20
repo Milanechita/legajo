@@ -66,19 +66,45 @@ def pesos(cantidad_smvm: float) -> float:
 class UmbralesSMVM:
     """Umbrales normativos, en cantidad de SMVM.
 
-    Se guardan en SMVM y no en pesos porque asi los escribe la norma. Al
-    actualizar el salario, los montos se recalculan solos.
+    Se guardan en SMVM y no en pesos porque asi los escribe la norma. La
+    Res. UIF 84/2023 adopto el SMVM como parametro justamente para que los
+    montos se actualicen solos: fijarlos en pesos obliga a una resolucion
+    cada vez y garantiza que queden desfasados.
     """
 
-    cliente_habitual: float = 700.0          # Res. 43/2024
-    locacion_alcanzada: float = 300.0        # Res. 43/2024
-    revision_externa: float = 875.0          # Res. 43/2024 art. 17
-    compraventa_inmuebles: float = 700.0     # Ley 25.246 art. 20 inc. 17 a)
-    administracion_bienes: float = 150.0     # Ley 25.246 art. 20 inc. 17 b)
-    administracion_cuentas: float = 50.0     # Ley 25.246 art. 20 inc. 17 c)
+    # --- reporte sistematico, Res. 14/2023 segun Res. 78/2025 art. 7 ---
+    reporte_efectivo: float = 40.0           # RTE, subio de 20 a 40
+    reporte_efectivo_cambio: float = 40.0    # RTEOC
+    deposito_efectivo_identificacion: float = 40.0   # Res. 14/2023 art. 42
+
+    # --- inmobiliario, Res. 43/2024 ---
+    cliente_habitual: float = 700.0
+    locacion_alcanzada: float = 300.0
+    revision_externa: float = 875.0          # art. 17
+
+    # --- profesionales, Ley 25.246 art. 20 inc. 17 ---
+    compraventa_inmuebles: float = 700.0     # a)
+    administracion_bienes: float = 150.0     # b)
+    administracion_cuentas: float = 50.0     # c)
+
+    # --- origen de fondos, Res. 84/2023 ---
+    ddjj_origen_fondos: float = 80.0         # declaracion jurada
+    documentacion_origen_fondos: float = 180.0   # respaldo documental
+    documentacion_origen_escribanos: float = 875.0
+
+    # --- registrales, Res. 70/2011 segun Res. 78/2025 art. 1 ---
+    compraventa_inmuebles_registro: float = 750.0   # subio de 200 a 750
 
     def en_pesos(self, nombre: str) -> float:
         return pesos(getattr(self, nombre))
+
+    def tabla(self) -> list[tuple[str, float, float]]:
+        """Todos los umbrales con su equivalente en pesos, para el informe."""
+        from dataclasses import fields
+        return [
+            (f.name, getattr(self, f.name), pesos(getattr(self, f.name)))
+            for f in fields(self)
+        ]
 
 
 UMBRALES = UmbralesSMVM()
@@ -95,9 +121,10 @@ UMBRALES = UmbralesSMVM()
 @dataclass(frozen=True)
 class ParametrosMonitoreo:
     # --- umbral de reporte ---
-    # Lo fija la UIF por resolucion y se actualiza. Sin este numero la regla
-    # de fraccionamiento no corre, y eso es correcto: detectar evasion de un
-    # umbral que no se sabe cual es seria inventar el resultado.
+    # Sale de UMBRALES.reporte_efectivo, que esta en SMVM. Dejarlo en cero
+    # apaga la regla de fraccionamiento, que es lo correcto cuando no se sabe
+    # cual es el umbral: detectar evasion de un limite desconocido seria
+    # inventar el resultado.
     umbral_reporte: float = 0.0
     umbral_vigencia: date | None = None
 
@@ -131,7 +158,16 @@ class ParametrosMonitoreo:
     jurisdicciones_de_riesgo: frozenset[str] = frozenset()
 
 
-def parametros_con_listas(umbral_reporte: float = 0.0,
+def umbral_reporte_vigente() -> float:
+    """El umbral de reporte en efectivo, en pesos, al SMVM vigente.
+
+    40 SMVM segun la Res. UIF 78/2025 art. 7, que sustituyo el art. 44 de la
+    Res. 14/2023 y lo subio desde 20.
+    """
+    return UMBRALES.en_pesos("reporte_efectivo")
+
+
+def parametros_con_listas(umbral_reporte: float | None = None,
                           umbral_vigencia: date | None = None) -> ParametrosMonitoreo:
     """Parametros con las jurisdicciones de riesgo ya cargadas desde la matriz.
 
@@ -143,6 +179,10 @@ def parametros_con_listas(umbral_reporte: float = 0.0,
         JURISDICCIONES_ALTO_RIESGO, JURISDICCIONES_MONITOREO,
         JURISDICCIONES_NO_COOPERANTES,
     )
+
+    if umbral_reporte is None:
+        umbral_reporte = umbral_reporte_vigente()
+        umbral_vigencia = umbral_vigencia or SMVM_VIGENCIA
 
     return ParametrosMonitoreo(
         umbral_reporte=umbral_reporte,

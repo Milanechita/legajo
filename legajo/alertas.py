@@ -26,6 +26,7 @@ from typing import Callable
 from .config import ParametrosMonitoreo, PARAMETROS_POR_DEFECTO
 from .operaciones import Operacion, Operatoria, Perfil
 from .paises import iso, nombre as nombre_pais
+from .regimen import Regimen, regimen_de_alerta, vencimiento
 
 ALTA = "ALTA"
 MEDIA = "MEDIA"
@@ -46,11 +47,44 @@ class Alerta:
     operaciones: tuple[Operacion, ...] = ()
     monto_involucrado: float = 0.0
     generada: date = field(default_factory=date.today)
-    plazo_dias: int = 90            # plazo de analisis
+
+    @property
+    def regimen(self) -> Regimen:
+        """El regimen no se declara, se deriva del tipo de inusualidad.
+
+        Un campo cargado a mano es un campo que alguien carga mal, y el error
+        recien aparece cuando la UIF pregunta por que un reporte de
+        terrorismo salio a los tres meses.
+        """
+        return regimen_de_alerta(self.codigo)
+
+    @property
+    def fecha_operacion(self) -> date:
+        """La mas antigua de las operaciones involucradas.
+
+        El tope de 90 dias corre desde que la operacion fue realizada, no
+        desde que se detecto. Tomar la mas reciente daria mas plazo del que
+        hay.
+        """
+        if not self.operaciones:
+            return self.generada
+        return min(o.fecha for o in self.operaciones)
+
+    @property
+    def vencimiento(self):
+        return vencimiento(self.regimen, self.fecha_operacion, self.generada)
 
     @property
     def vence(self) -> date:
-        return self.generada + timedelta(days=self.plazo_dias)
+        return self.vencimiento.vence
+
+    @property
+    def dias_restantes(self) -> int:
+        return (self.vence - self.generada).days
+
+    @property
+    def vencida(self) -> bool:
+        return self.vence < self.generada
 
     @property
     def detalle_operaciones(self) -> str:
@@ -71,6 +105,7 @@ class Alerta:
             "metodologia": self.metodologia,
             "generada": self.generada.isoformat(),
             "tipo_inusualidad": self.codigo,
+            "regimen": self.regimen.value,
             "severidad": self.severidad,
             "descripcion": self.descripcion,
             "monto_involucrado": self.monto_involucrado,
