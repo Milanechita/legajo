@@ -22,12 +22,14 @@ from .fuentes.ofac import ParserOFAC, incorporar_alias
 from .fuentes.onu import ParserONU
 from .fuentes.repet import ParserRePET
 from .io_planilla import (
-    agregar_hoja_alertas, agregar_hojas_etapa2, agregar_hojas_etapa4, exportar,
-    leer_estructura, leer_operaciones, leer_padron, leer_peps, leer_perfiles,
+    agregar_hoja_alertas, agregar_hojas_etapa2, agregar_hojas_etapa4,
+    agregar_hojas_etapa5, exportar, leer_decisiones, leer_estructura,
+    leer_operaciones, leer_padron, leer_peps, leer_perfiles,
 )
 from .matriz import MATRIZ_POR_DEFECTO
 from .modelo import Caso, Estado
 from .operaciones import agrupar
+from .ros import Resolucion, armar
 from .sanciones import estimar
 from .riesgo import evaluar_casos
 from .screening import screenear
@@ -323,6 +325,116 @@ def comando_circuito(args: argparse.Namespace) -> int:
     return 0
 
 
+def comando_ros(args: argparse.Namespace) -> int:
+    """Arma los borradores de ROS desde el informe que el analista completo.
+
+    Vuelve a correr el circuito para reconstruir el contexto de cada alerta y
+    lee del informe unicamente las columnas de decision. Reconstruir es mas
+    barato que guardar estado entre corridas, y garantiza que el borrador se
+    arme con los datos de hoy y no con los de la corrida anterior.
+    """
+    informe = Path(args.informe)
+    if not informe.exists():
+        print(f"error: no existe {informe}", file=sys.stderr)
+        return 2
+
+    decisiones = leer_decisiones(informe)
+    if not decisiones:
+        print(f"error: {informe} no tiene hoja Alertas", file=sys.stderr)
+        return 2
+
+    resueltas = {k: d for k, d in decisiones.items()
+                 if d.resolucion is not Resolucion.PENDIENTE}
+    print(f"Decisiones leidas: {len(decisiones)}, resueltas {len(resueltas)}")
+    if not resueltas:
+        print("\nNinguna alerta tiene resolucion cargada.")
+        print("Completar en la hoja Alertas las columnas resolucion,")
+        print("medidas_adoptadas, decision_final y fecha_decision.")
+        return 1
+
+    contexto = _reconstruir(args)
+    if contexto is None:
+        return 2
+    casos, alertas, evaluaciones, perfiles, resoluciones, por_cliente = contexto
+
+    clientes = {c.cliente.cliente_id: c.cliente for c in casos}
+    resultado = armar(alertas, decisiones, clientes, evaluaciones, perfiles,
+                      resoluciones, por_cliente)
+
+    agregar_hojas_etapa5(informe, resultado)
+
+    print(f"\n  Borradores de ROS      {len(resultado.borradores):3}")
+    print(f"    presentables         {len(resultado.presentables):3}")
+    print(f"    incompletos          {len(resultado.incompletos):3}")
+    print(f"  Inusuales justificadas {len(resultado.justificadas):3}")
+    print(f"  Pendientes de decision {len(resultado.pendientes):3}")
+
+    fuera = [b for b in resultado.borradores if b.fuera_de_plazo]
+    if fuera:
+        print(f"\n  ATENCION: {len(fuera)} borrador(es) con el plazo vencido.")
+        print("  La demora hay que explicarla en la presentacion.")
+
+    if resultado.incompletos:
+        print("\n  Borradores incompletos:")
+        for b in resultado.incompletos:
+            print(f"    {b.cliente.cliente_id}  {b.cliente.nombre[:26]:28} "
+                  f"{'; '.join(b.faltantes())}")
+
+    con_obs = [b for b in resultado.borradores if b.observaciones()]
+    if con_obs:
+        print("\n  Observaciones sobre los borradores:")
+        for b in con_obs:
+            for o in b.observaciones():
+                print(f"    {b.cliente.cliente_id}  {o}")
+
+    sin_doc = resultado.sin_documentar
+    if sin_doc:
+        print(f"\n  ATENCION: {len(sin_doc)} inusualidad(es) justificada(s) sin "
+              f"analisis documentado.")
+        print("  Un registro sin medidas ni motivo no distingue una alerta bien")
+        print("  resuelta de una que nadie miro.")
+
+    print(f"\nInforme: {informe}")
+    return 0
+
+
+def _reconstruir(args: argparse.Namespace):
+    """Rehace el contexto del circuito para armar los borradores."""
+    preparado = _preparar(args)
+    if preparado is None:
+        return None
+    padron, clientes = preparado
+
+    politica = Politica(umbral_revision=args.umbral,
+                        umbral_probable=POLITICA_POR_DEFECTO.umbral_probable)
+    casos = [Caso(caso_id=f"C{i:05d}", cliente=c) for i, c in enumerate(clientes, 1)]
+    resultado = screenear(casos, padron, politica, actor=args.actor)
+
+    por_cliente: dict[str, list] = {}
+    for c in resultado.coincidencias:
+        por_cliente.setdefault(c.cliente_id, []).append(c)
+
+    estructura = leer_estructura(args.societaria, clientes) if args.societaria else None
+    resoluciones = {}
+    if estructura is not None:
+        for cliente in clientes:
+            if cliente.tipo != "PERSONA":
+                resoluciones[cliente.cliente_id] = resolver(estructura, cliente.cliente_id)
+
+    registro_pep = leer_peps(args.peps) if args.peps else None
+    evaluaciones = evaluar_casos(casos, resoluciones, por_cliente,
+                                 registro_pep=registro_pep,
+                                 umbral_probable=politica.umbral_probable,
+                                 matriz=MATRIZ_POR_DEFECTO, actor=args.actor)
+
+    operatorias = agrupar(leer_operaciones(args.operaciones))
+    perfiles = leer_perfiles(args.perfiles) if args.perfiles else {}
+    alertas = monitorear(operatorias, perfiles,
+                         parametros_con_listas(umbral_reporte=args.umbral_reporte))
+
+    return casos, alertas, evaluaciones, perfiles, resoluciones, por_cliente
+
+
 def comando_actualizar(args: argparse.Namespace) -> int:
     """Baja las listas desde las fuentes oficiales."""
     print(f"Descargando listas a {args.listas}\n")
@@ -378,6 +490,19 @@ def main(argv: list[str] | None = None) -> int:
                           "Res. UIF 78/2025")
     cir.add_argument("--salida", default="informe_circuito.xlsx")
     cir.set_defaults(func=comando_circuito)
+
+    ros = sub.add_parser("ros",
+                         help="etapa 5: borradores de ROS desde el informe completado")
+    comunes(ros)
+    ros.add_argument("--informe", required=True,
+                     help="XLSX del circuito con las decisiones ya cargadas")
+    ros.add_argument("--societaria", help="CSV o XLSX con el grafo societario")
+    ros.add_argument("--peps", help="CSV de declaraciones juradas de condicion PEP")
+    ros.add_argument("--operaciones", required=True, help="CSV o XLSX con la operatoria")
+    ros.add_argument("--perfiles", help="CSV o XLSX con los perfiles transaccionales")
+    ros.add_argument("--umbral-reporte", type=float, default=None,
+                     help="umbral de reporte en pesos; por defecto, 40 SMVM")
+    ros.set_defaults(func=comando_ros)
 
     act = sub.add_parser("actualizar-listas", help="bajar las listas desde las fuentes oficiales")
     act.add_argument("--listas", required=True, help="directorio destino")

@@ -19,6 +19,7 @@ justamente la parte que una maquina no puede resolver.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Callable
@@ -47,6 +48,24 @@ class Alerta:
     operaciones: tuple[Operacion, ...] = ()
     monto_involucrado: float = 0.0
     generada: date = field(default_factory=date.today)
+
+    @property
+    def identificador(self) -> str:
+        """Identidad estable de la alerta, derivada de su contenido.
+
+        Tiene que ser deterministica: el circuito se vuelve a correr entre que
+        se exporta el informe y que se leen las decisiones del analista. Un id
+        aleatorio romperia el ida y vuelta en silencio, porque las decisiones
+        no matchearian y las alertas volverian a figurar como pendientes sin
+        que nadie se entere.
+
+        La clave (cliente, codigo) no alcanza: la misma tipologia puede
+        disparar varias veces sobre un cliente, con dos jurisdicciones
+        distintas o dos grupos de fraccionamiento separados.
+        """
+        crudo = (f"{self.cliente_id}|{self.codigo}|{self.fecha_operacion.isoformat()}"
+                 f"|{self.monto_involucrado:.2f}")
+        return hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:12]
 
     @property
     def regimen(self) -> Regimen:
@@ -98,6 +117,7 @@ class Alerta:
         que no ocurrio.
         """
         return {
+            "alerta_id": self.identificador,
             "cliente_id": self.cliente_id,
             "nivel_riesgo": nivel_riesgo,
             "perfil": perfil,

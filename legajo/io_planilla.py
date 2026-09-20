@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -502,10 +503,11 @@ def agregar_hoja_alertas(
 
     hoja = libro.create_sheet("Alertas")
     columnas = [
-        "cliente_id", "cliente", "nivel_riesgo", "perfil_declarado",
+        "alerta_id", "cliente_id", "cliente", "nivel_riesgo", "perfil_declarado",
         "tipo_inusualidad", "regimen", "severidad", "descripcion",
         "monto_involucrado", "operaciones", "metodologia", "generada",
-        "vence", "estado_plazo", "medidas_adoptadas", "decision_final",
+        "vence", "estado_plazo", "resolucion", "medidas_adoptadas",
+        "decision_final", "fecha_decision",
     ]
     _escribir_encabezado(hoja, columnas)
 
@@ -527,6 +529,7 @@ def agregar_hoja_alertas(
         estado = ("PLAZO VENCIDO" if a.vencida
                   else f"{a.dias_restantes} dia(s)")
         hoja.append([
+            a.identificador,
             cliente_id,
             nombres.get(cliente_id, ""),
             ev.nivel if ev else "",
@@ -543,20 +546,36 @@ def agregar_hoja_alertas(
             estado,
             "",
             "",
+            "",
+            "",
         ])
         relleno = _VENCIDO if a.vencida else _SEVERIDAD_RELLENO.get(a.severidad)
         for celda in hoja[hoja.max_row]:
             celda.font = _CUERPO
             if relleno:
                 celda.fill = relleno
-        hoja.cell(row=hoja.max_row, column=9).number_format = "#,##0"
+        hoja.cell(row=hoja.max_row, column=10).number_format = "#,##0"
 
     if not filas:
         hoja.append(["sin alertas de monitoreo"] + [""] * (len(columnas) - 1))
         for celda in hoja[hoja.max_row]:
             celda.font = _CUERPO
 
-    _ajustar_anchos(hoja, [12, 26, 9, 26, 26, 8, 10, 72, 16, 70, 52, 12, 12, 15, 26, 26])
+    _ajustar_anchos(hoja, [14, 12, 26, 9, 26, 26, 8, 10, 72, 16, 70, 52, 12, 12,
+                           15, 14, 40, 60, 14])
+
+    # Lista desplegable en resolucion. El ida y vuelta pasa por este campo, y
+    # un "reportar" mal tipeado se lee como pendiente y la alerta desaparece
+    # del circuito sin que nadie se entere.
+    validacion = DataValidation(
+        type="list", formula1='"REPORTAR,JUSTIFICADA"', allow_blank=True,
+        showDropDown=False,
+    )
+    validacion.error = "Solo REPORTAR o JUSTIFICADA"
+    validacion.errorTitle = "Resolucion invalida"
+    hoja.add_data_validation(validacion)
+    if hoja.max_row > 1:
+        validacion.add(f"P2:P{hoja.max_row}")
 
     libro.save(ruta)
     return ruta
@@ -639,6 +658,153 @@ def agregar_hojas_etapa4(
     hoja[f"A{hoja.max_row}"].font = Font(name=FUENTE, italic=True, size=9)
 
     _ajustar_anchos(hoja, [46, 34, 10, 18, 56])
+
+    libro.save(ruta)
+    return ruta
+
+
+COLUMNAS_DECISION = {
+    "cliente_id", "tipo_inusualidad", "resolucion", "medidas_adoptadas",
+    "decision_final", "fecha_decision",
+}
+
+
+def leer_decisiones(ruta: str | Path) -> dict:
+    """Lee de vuelta lo que el analista resolvio en la hoja Alertas.
+
+    El equipo de cumplimiento trabaja en Excel y ahi se queda. El sistema le
+    entrega el informe con las columnas de decision vacias y lo lee cuando
+    vuelve. Obligarlo a cargar las conclusiones en otra herramienta seria la
+    solucion prolija que nadie usa.
+    """
+    from .ros import Decision, Resolucion
+
+    libro = load_workbook(Path(ruta), read_only=True, data_only=True)
+    if "Alertas" not in libro.sheetnames:
+        libro.close()
+        return {}
+
+    hoja = libro["Alertas"]
+    filas = hoja.iter_rows(values_only=True)
+    encabezados = [str(c or "").strip() for c in next(filas)]
+    indice = {nombre: i for i, nombre in enumerate(encabezados)}
+
+    def valor(fila, nombre: str) -> str:
+        i = indice.get(nombre)
+        if i is None or i >= len(fila) or fila[i] is None:
+            return ""
+        return str(fila[i]).strip()
+
+    decisiones: dict = {}
+    for fila in filas:
+        alerta_id = valor(fila, "alerta_id")
+        cliente_id = valor(fila, "cliente_id")
+        codigo = valor(fila, "tipo_inusualidad")
+        if not alerta_id or not cliente_id:
+            continue
+
+        crudo = valor(fila, "resolucion").upper()
+        try:
+            resolucion = Resolucion(crudo) if crudo else Resolucion.PENDIENTE
+        except ValueError:
+            resolucion = Resolucion.PENDIENTE
+
+        decisiones[alerta_id] = Decision(
+            alerta_id=alerta_id,
+            cliente_id=cliente_id,
+            codigo_alerta=codigo,
+            resolucion=resolucion,
+            medidas=valor(fila, "medidas_adoptadas"),
+            motivo=valor(fila, "decision_final"),
+            fecha=_fecha_iso(valor(fila, "fecha_decision")),
+        )
+
+    libro.close()
+    return decisiones
+
+
+def agregar_hojas_etapa5(ruta: str | Path, resultado) -> Path:
+    """Escribe los borradores de ROS y el registro de inusuales.
+
+    Son dos salidas y las dos son obligatorias. La segunda es la que se
+    olvida: las inusualidades resueltas sin reportar tambien tienen que
+    quedar registradas con su analisis.
+    """
+    ruta = Path(ruta)
+    libro = load_workbook(ruta)
+
+    # --- Borradores de ROS ---
+    hoja = libro.create_sheet("Borradores ROS")
+    aviso = ("CONFIDENCIAL. Art. 21 inc. c) y 22 Ley 25.246. Insumo para cargar en el "
+             "SRO+ de la UIF; no constituye un reporte presentado.")
+    hoja.append([aviso])
+    hoja["A1"].font = Font(name=FUENTE, bold=True, color="9C0006", size=10)
+    hoja["A1"].fill = PatternFill("solid", start_color="FFC7CE")
+
+    columnas = ["cliente_id", "cliente", "tipo", "documento", "regimen",
+                "nivel_riesgo", "monto", "vence", "estado", "faltantes",
+                "observaciones", "fundamento"]
+    hoja.append(columnas)
+    for celda in hoja[2]:
+        celda.font = _ENCABEZADO
+        celda.fill = _RELLENO_ENCABEZADO
+        celda.alignment = Alignment(vertical="center", wrap_text=True)
+    hoja.freeze_panes = "A3"
+
+    for b in resultado.borradores:
+        documento = b.cliente.documentos[0].clave() if b.cliente.documentos else ""
+        estado = ("FUERA DE PLAZO" if b.fuera_de_plazo
+                  else "PRESENTABLE" if b.completo else "INCOMPLETO")
+        hoja.append([
+            b.cliente.cliente_id, b.cliente.nombre, b.cliente.tipo, documento,
+            b.regimen.value, b.nivel_riesgo, b.monto, b.vence.isoformat(),
+            estado, "; ".join(b.faltantes()), "; ".join(b.observaciones()),
+            b.fundamento(),
+        ])
+        relleno = (_VENCIDO if b.fuera_de_plazo
+                   else None if b.completo else _SEVERIDAD_RELLENO["MEDIA"])
+        for celda in hoja[hoja.max_row]:
+            celda.font = _CUERPO
+            celda.alignment = Alignment(vertical="top", wrap_text=True)
+            if relleno:
+                celda.fill = relleno
+        hoja.cell(row=hoja.max_row, column=7).number_format = "#,##0"
+
+    if not resultado.borradores:
+        hoja.append(["sin operaciones resueltas para reportar"] + [""] * (len(columnas) - 1))
+        for celda in hoja[hoja.max_row]:
+            celda.font = _CUERPO
+
+    _ajustar_anchos(hoja, [12, 26, 10, 18, 9, 12, 16, 12, 16, 40, 56, 110])
+
+    # --- Registro de inusuales no reportadas ---
+    hoja = libro.create_sheet("Inusuales justificadas")
+    _escribir_encabezado(hoja, [
+        "cliente_id", "cliente", "nivel_riesgo", "tipo_inusualidad",
+        "descripcion", "monto", "generada", "medidas_adoptadas",
+        "decision_final", "fecha_decision", "documentada",
+    ])
+
+    for j in resultado.justificadas:
+        hoja.append([
+            j.cliente_id, j.cliente, j.nivel_riesgo, j.alerta.codigo,
+            j.alerta.descripcion, j.alerta.monto_involucrado,
+            j.alerta.generada.isoformat(), j.decision.medidas, j.decision.motivo,
+            j.decision.fecha.isoformat() if j.decision.fecha else "",
+            "SI" if j.documentada else "NO",
+        ])
+        for celda in hoja[hoja.max_row]:
+            celda.font = _CUERPO
+            if not j.documentada:
+                celda.fill = _SEVERIDAD_RELLENO["MEDIA"]
+        hoja.cell(row=hoja.max_row, column=6).number_format = "#,##0"
+
+    if not resultado.justificadas:
+        hoja.append(["sin inusualidades justificadas"] + [""] * 10)
+        for celda in hoja[hoja.max_row]:
+            celda.font = _CUERPO
+
+    _ajustar_anchos(hoja, [12, 26, 10, 26, 72, 16, 12, 44, 60, 14, 12])
 
     libro.save(ruta)
     return ruta

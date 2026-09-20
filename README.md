@@ -4,9 +4,9 @@ Herramienta para automatizar el circuito de análisis PLA/FT. Está pensada para
 equipos de cumplimiento que hoy resuelven el cotejo de listas y el armado del
 legajo con planillas y búsquedas manuales.
 
-**Estado actual: etapas 1 a 4 de 5.** Screening contra listas, resolución de
+**Circuito completo, etapas 1 a 5.** Screening contra listas, resolución de
 beneficiario final, scoring de riesgo, monitoreo transaccional, congelamiento
-administrativo y exposición sancionatoria.
+administrativo, exposición sancionatoria y armado de ROS.
 
 ---
 
@@ -38,7 +38,7 @@ ALTA ──▶ SCREENING ──▶ SCORING EBR ──▶ ANÁLISIS ──▶ ┬
 | 2 | Beneficiario final y scoring EBR | ✅ implementada |
 | 3 | Perfil declarado contra operado real | ✅ implementada |
 | 4 | Régimen de reporte, congelamiento y exposición | ✅ implementada |
-| 5 | Export e insumo de ROS | pendiente |
+| 5 | Borradores de ROS y registro de inusuales | ✅ implementada |
 
 ---
 
@@ -67,6 +67,17 @@ python -m legajo circuito \
   --operaciones     ejemplos/operaciones.csv \
   --perfiles        ejemplos/perfiles.csv \
   --salida          informe_circuito.xlsx
+
+# El analista completa en Excel las columnas resolucion, medidas_adoptadas,
+# decision_final y fecha_decision de la hoja Alertas. Despues:
+python -m legajo ros \
+  --informe         informe_circuito.xlsx \
+  --padron          ejemplos/clientes.csv \
+  --listas          ejemplos/listas \
+  --societaria      ejemplos/estructura.csv \
+  --peps            ejemplos/peps.csv \
+  --operaciones     ejemplos/operaciones.csv \
+  --perfiles        ejemplos/perfiles.csv
 ```
 
 Salida típica:
@@ -146,8 +157,9 @@ avisa para que nadie piense que el programa está duplicando.
 
 ## Entrada y salida
 
-Entra CSV o XLSX, sale un XLSX de ocho hojas: Resumen, Coincidencias,
-Expediente, Beneficiario final, Riesgo, Alertas, Congelamiento y Exposición.
+Entra CSV o XLSX, sale un XLSX de diez hojas: Resumen, Coincidencias,
+Expediente, Beneficiario final, Riesgo, Alertas, Congelamiento, Exposición,
+Borradores ROS e Inusuales justificadas.
 
 ### Padrón de clientes
 
@@ -583,6 +595,84 @@ Es una estimación de exposición y no un cálculo de multa. La sanción efectiv
 la determina la UIF en sumario, ponderando naturaleza del incumplimiento,
 tamaño de la organización, antecedentes, volumen de negocios y reincidencia.
 
+### El sistema no emite ningún ROS
+
+Los reportes se cargan por el SRO+ de la UIF. Pero hay una razón de fondo
+además de la operativa.
+
+La Res. UIF 56/2024 define operación sospechosa como aquella que ocasiona
+sospecha de que los bienes provienen de un ilícito, **o que, habiéndose
+identificado previamente como inusual, luego del análisis y evaluación
+realizados por el sujeto obligado, no permite justificar la inusualidad**.
+
+La inusualidad la detecta el sistema. La conversión a sospecha requiere un
+análisis humano que no la justifique. Automatizar ese salto sería fabricar una
+conclusión que nadie sacó, y es lo primero que desarma una inspección.
+
+Lo que sí arma el sistema es el borrador fundado: los datos que la norma exige
+y la descripción de las inusualidades con su metodología. Lo que decide una
+persona queda en blanco y marcado como faltante, no rellenado con una frase
+plausible.
+
+### El informe va y vuelve
+
+```
+sistema  →  informe.xlsx con las columnas de decisión vacías
+                    ↓
+            el analista resuelve en Excel
+                    ↓
+sistema  ←  borradores de ROS + registro de inusuales
+```
+
+El equipo de cumplimiento trabaja en Excel y ahí se queda. Obligarlo a cargar
+las conclusiones en otra herramienta sería la solución prolija que nadie usa.
+
+Las dos columnas de texto no son intercambiables. `medidas_adoptadas` es lo
+que se hizo para averiguar; `decision_final` es la conclusión fundada. Un
+registro con medidas y sin motivo muestra actividad sin decisión. Uno con
+motivo y sin medidas muestra una decisión sin análisis detrás.
+
+### La alerta necesita identidad propia
+
+El ida y vuelta se rompe sin esto, y se rompe en silencio.
+
+La clave `(cliente, tipología)` no alcanza: la misma tipología dispara varias
+veces sobre un cliente, con dos jurisdicciones distintas o dos grupos de
+fraccionamiento separados. Sin identificador, dos decisiones colapsan en una y
+una alerta vuelve a figurar como pendiente sin que nadie se entere.
+
+El identificador se deriva del contenido de la alerta, no se sortea. Tiene que
+ser determinístico porque el circuito se vuelve a correr entre que se exporta
+el informe y que se leen las decisiones.
+
+### Las inusualidades que no se reportan también se registran
+
+Esta es la salida que se olvida. La norma exige llevar constancia de las
+operaciones inusuales que, después del análisis documentado, no fueron
+determinadas como sospechosas.
+
+Sin ese registro el sistema de monitoreo no se puede auditar: no hay forma de
+distinguir una alerta bien resuelta de una alerta que nadie miró. Por eso las
+justificadas sin medidas ni motivo salen marcadas como hallazgo.
+
+Una resolución en blanco tampoco se toma como justificada. Cerrar por omisión
+sería exactamente lo contrario de documentar.
+
+### Un ROS cubre la operatoria, no una alerta
+
+Los borradores se agrupan por cliente y por régimen. Cinco depósitos
+fraccionados y un uso desproporcionado de efectivo sobre la misma operatoria
+son un reporte, no dos.
+
+### El borrador marca las inconsistencias que no bloquean
+
+Un cliente reportado por una operatoria millonaria que sigue clasificado como
+riesgo bajo es lo primero que encuentra una inspección. La norma prevé que el
+monitoreo derive en la actualización del perfil y del nivel de riesgo; si el
+nivel quedó igual, el sistema de calificación no está funcionando.
+
+No impide presentar el reporte, pero conviene resolverlo antes.
+
 ### Entra y sale por Excel
 
 El equipo de cumplimiento trabaja en Excel. Una herramienta que lo obligue a
@@ -629,6 +719,7 @@ legajo/
 ├── regimen.py         LA, FT y FPADM: plazos y derivación
 ├── congelamiento.py   obligaciones de congelamiento administrativo
 ├── sanciones.py       módulo, liquidación y exposición estimada
+├── ros.py             borradores de reporte y registro de inusuales
 ├── io_planilla.py     lectura CSV/XLSX y export a Excel
 ├── cli.py             interfaz de línea de comandos
 └── fuentes/
@@ -652,7 +743,7 @@ que auditar, versionar y justificar. La única dependencia del proyecto es
 python -m pytest tests/ -q
 ```
 
-Son 155 y están escritas como escenarios de dominio, no como pruebas de
+Son 179 y están escritas como escenarios de dominio, no como pruebas de
 funciones sueltas. Las que importan:
 
 - El umbral del 10% se aplica a la suma de caminos y no a cada arista
@@ -693,6 +784,13 @@ funciones sueltas. Las que importan:
 - Una coincidencia débil no congela los bienes de nadie
 - Los pasos del congelamiento salen sin cumplir
 - La exposición toma el mayor monto por cliente y no la suma
+- La alerta tiene identidad estable entre corridas del circuito
+- La identidad distingue dos alertas de la misma tipología y no depende de la redacción
+- Sin la conclusión del analista el borrador queda incompleto y lo dice
+- El fundamento marca lo que falta en vez de rellenarlo
+- Un borrador fuera de plazo deja constancia de la demora
+- Una justificada sin análisis documentado se marca como hallazgo
+- Una resolución en blanco no se toma como justificada
 
 ---
 
@@ -748,6 +846,12 @@ Lo que conviene saber antes de usarla:
   total. No es un pronóstico ni sirve para negociar con la UIF
 - El sistema identifica la obligación de congelamiento. No congela nada ni
   emite ningún reporte: eso lo hace una persona por los canales de la UIF
+- El comando `ros` reconstruye el circuito para armar los borradores. No
+  guarda estado entre corridas, así que el borrador se arma con los datos
+  de hoy y no con los de la corrida anterior
+- El nivel de riesgo no se recalcula con el resultado del monitoreo. El
+  borrador marca la inconsistencia pero la actualización del perfil sigue
+  siendo manual
 - El monitoreo trabaja sobre la operatoria que se le da. No se conecta a
   ningún core bancario: la extracción es responsabilidad de quien lo use
 - La triangulación de fondos entre cuentas vinculadas no está implementada.
