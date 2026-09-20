@@ -457,6 +457,28 @@ def comando_actualizar(args: argparse.Namespace) -> int:
     return 1 if fallidas else 0
 
 
+def comando_evaluar(args: argparse.Namespace) -> int:
+    """Mide recall y falsas alertas del screening contra casos con respuesta conocida."""
+    from . import evaluacion as ev
+
+    print(f"Cargando listas de {args.listas}", end="\n\n")
+    padron = cargar_listas(Path(args.listas))
+    print(f"\n{len(padron)} designados. Corriendo {args.por_tipo} casos por tipo, "
+          f"semilla {args.semilla}.", end="\n\n")
+
+    sinteticos = ev.generar_sinteticos(padron, por_tipo=args.por_tipo, semilla=args.semilla)
+    print(ev.informe(ev.correr(sinteticos, padron), "Conjunto sintetico"))
+
+    if args.dificiles:
+        casos, omitidos = ev.leer_dificiles(args.dificiles, padron)
+        resultados = ev.correr(casos, padron, procesos=1)
+        print("\n" + ev.detalle_dificiles(resultados, POLITICA_POR_DEFECTO.umbral_revision))
+        print("\n" + ev.informe(resultados, "Conjunto dificil"))
+        for o in omitidos:
+            print(f"  omitido: {o}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="legajo",
@@ -509,6 +531,14 @@ def main(argv: list[str] | None = None) -> int:
     act.add_argument("--incluir-opcionales", action="store_true",
                      help="bajar tambien las listas no obligatorias para Argentina")
     act.set_defaults(func=comando_actualizar)
+
+    evl = sub.add_parser("evaluar",
+                         help="recall y falsas alertas del screening contra casos etiquetados")
+    evl.add_argument("--listas", required=True, help="directorio con las listas descargadas")
+    evl.add_argument("--dificiles", help="CSV de casos dificiles escritos a mano")
+    evl.add_argument("--por-tipo", type=int, default=40, help="casos sinteticos por tipo")
+    evl.add_argument("--semilla", type=int, default=20260920)
+    evl.set_defaults(func=comando_evaluar)
 
     args = parser.parse_args(argv)
     return args.func(args)

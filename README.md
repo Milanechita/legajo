@@ -526,6 +526,42 @@ antes     118 min   proyectado a 50.000 clientes
 después    64 min   con recall del 100%
 ```
 
+### Cuánto ruido cuesta el recall
+
+Decir que el sistema está calibrado para recall era una afirmación. Ahora hay
+un comando que la mide, `python -m legajo evaluar`, contra las listas reales
+(20.404 designados de OFAC y ONU al 19 de septiembre de 2026).
+
+Hay dos conjuntos y se reportan separados. El sintético se genera desde la
+lista real con semilla fija: designados con el orden cambiado, sin el nombre
+del medio, con iniciales, con un error de tipeo o por alias, más clientes
+argentinos comunes y homónimos parciales como negativos. El difícil son 26
+casos escritos a mano en `evaluacion/casos_dificiles.csv`, con
+transliteraciones como `Khaled Sheikh Mohamed` o `Hizbullah`.
+
+```
+umbral   recall   precisión   falsa alerta
+    78    99,2%      64,5%          81,9%   <- revisión
+    85    97,1%      82,9%          30,0%
+    92    82,5%      98,0%           2,5%   <- probable
+```
+
+El recall aguanta. Los 18 casos difíciles positivos salen detectados, y en el
+sintético solo se pierden 2 de 240, ambos del tipo "sin nombre del medio".
+
+El costo está del otro lado. Con el umbral de revisión en 78, el 82% de los
+clientes limpios genera al menos una alerta, unas 7,5 en promedio. Los
+nombres argentinos comunes chocan con designados de una sola palabra
+(`ROMINA`, `CAROL`, `ARIA`) y con nombres de buques. De las 985 alertas sobre
+clientes limpios, 386 son contra buques y 558 contra entidades.
+Solo 41 son contra personas.
+
+Cómo leer estos números: el recall es contra el modelo de error que armé yo,
+no contra el mundo. Las perturbaciones las elegí yo y un padrón real puede
+fallar de maneras que no imaginé. Y los negativos no son una muestra de un
+padrón de clientes real. Sirven para comparar cambios entre sí, no para
+prometer una tasa de alertas.
+
 ---
 
 ## Arquitectura

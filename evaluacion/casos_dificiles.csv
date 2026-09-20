@@ -1,0 +1,27 @@
+nombre,tipo,fecha_nacimiento,nacionalidad,documento_tipo,documento,tipo_caso,esperados
+Ayman Alzawahiri,PERSONA,,,,,transliteracion,OFAC_SDN:2676
+Aiman Zawahiri,PERSONA,,,,,transliteracion,OFAC_SDN:2676
+Kim Jong-un,PERSONA,1984-01-08,,,,transliteracion,OFAC_SDN:20157
+Jong Un Kim,PERSONA,,,,,orden_invertido,OFAC_SDN:20157
+Hafez Mohammed Saeed,PERSONA,,,,,transliteracion,ONU_CONSOLIDADA:2833107
+Hafiz Saeed,PERSONA,,,,,sin_medio,ONU_CONSOLIDADA:2833107
+Nicolás Maduro,PERSONA,,VENEZUELA,,,sin_medio,OFAC_SDN:22790
+Maduro Moros Nicolas,PERSONA,1962-11-23,VENEZUELA,,,orden_invertido,OFAC_SDN:22790
+Joaquín Guzmán,PERSONA,,MEXICO,,,sin_medio,OFAC_SDN:6861
+Joaquin Archivaldo Guzman Loera,PERSONA,,,,,segundo_nombre_extra,OFAC_SDN:6861
+Khalid Shaikh Mohammad,PERSONA,,,,,transliteracion,OFAC_SDN:6928
+Khaled Sheikh Mohamed,PERSONA,,,,,transliteracion,OFAC_SDN:6928
+Mohamed Masud Azhar,PERSONA,,,,,transliteracion,ONU_CONSOLIDADA:6908769|OFAC_SDN:11459
+Serajuddin Haqani,PERSONA,,,,,alias_con_typo,ONU_CONSOLIDADA:2785696|OFAC_SDN:10743
+Hizbullah,ENTIDAD,,,,,transliteracion,OFAC_SDN:4697
+Harakat al-Muqawama al-Islamiyya,ENTIDAD,,,,,alias_con_typo,OFAC_SDN:4695
+Wagner Group,ENTIDAD,,,,,alias_traducido,OFAC_SDN:22543
+Rosneft Oil Company,ENTIDAD,,,,,alias_exacto,OFAC_SDN:17022
+Juan Carlos Perez,PERSONA,1975-03-10,ARGENTINA,,,homonimo_duro,
+Maria Gonzalez,PERSONA,1988-07-22,ARGENTINA,,,homonimo_duro,
+Kim Lopez,PERSONA,1990-02-02,ARGENTINA,,,homonimo_duro,
+Carlos Guzman,PERSONA,1969-09-14,ARGENTINA,,,homonimo_duro,
+Jose Maduro,PERSONA,1971-04-30,ARGENTINA,,,homonimo_duro,
+Alberto Wagner,PERSONA,1958-12-01,ARGENTINA,,,homonimo_duro,
+Hassan Rodriguez,PERSONA,1983-06-18,ARGENTINA,,,homonimo_duro,
+Panificadora Los Hermanos SRL,ENTIDAD,,,,,homonimo_duro,

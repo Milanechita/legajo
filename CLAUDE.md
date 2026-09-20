@@ -87,7 +87,10 @@ proyecto.
 ## Comandos
 
 ```bash
-python -m pytest tests/ -q          # 200 pruebas, tardan menos de un segundo
+python -m pytest tests/ -q          # 209 pruebas, tardan menos de un segundo
+
+python -m legajo evaluar --listas <dir> --dificiles evaluacion/casos_dificiles.csv
+                                   # recall y falsas alertas, ~1 min con 20 nucleos
 
 python -m legajo circuito \
   --padron ejemplos/clientes.csv --listas ejemplos/listas \
@@ -106,7 +109,7 @@ justificar por qué no alcanza con la biblioteca estándar.
 
 ## Estado y pendientes
 
-**Terminado:** las cinco etapas, 200 pruebas, informe de diez hojas, interfaz
+**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 209 pruebas, informe de diez hojas, interfaz
 de escritorio y empaquetado.
 
 **Sin probar todavía:**
@@ -117,8 +120,12 @@ de escritorio y empaquetado.
 
 **Pendientes ordenados por valor:**
 
-1. **Set de casos etiquetados.** Es el agujero más grande. Hoy "calibrado para
-   recall" es una afirmación sin métrica de precisión y recall detrás.
+1. **Compatibilidad de tipo en el screening.** Salió de medir con
+   `python -m legajo evaluar`: el 82% de los clientes limpios genera alerta,
+   y 386 de 985 alertas son contra buques. Filtrar por tipo
+   compatible bajó la falsa alerta a 33% con el mismo recall, pero los
+   positivos sintéticos son persona contra persona por construcción, así que
+   esa prueba no alcanza. Hay que discutirlo antes de tocar el matcher.
 2. **Demo que se vea sin clonar.** Un reclutador de compliance no va a correr
    `python -m legajo`.
 3. **Triangulación de fondos** entre cuentas vinculadas. Necesita el grafo de
