@@ -82,6 +82,7 @@ proyecto.
 | El índice descarta trabajo, no coincidencias | Hay una prueba que corre las dos búsquedas y exige el mismo resultado |
 | Un buque no se coteja contra un cliente persona | Un cliente es persona o sociedad, nunca un barco. Baja la falsa alerta de 81% a 61% sin mover el recall en tres semillas |
 | El filtro por tipo estricto está descartado | Medido: se lleva un tercio del recall. Pierde unipersonales, tipos mal cargados y buques homónimos de su naviera |
+| La interfaz es oscura y monoespaciada | Se mira varias horas seguidas. El contraste alto cansa menos que una planilla blanca |
 | La interfaz llama a `cli.main` | Si duplicara lógica, las dos versiones divergen y nadie se entera |
 
 ---
@@ -117,8 +118,10 @@ de escritorio y empaquetado.
 **Probado en Windows 11 el 20/09/2026:**
 
 - La ventana de tkinter corre. El layout tenía el `minsize` mal: a 780x640 los
-  cuatro botones de acción quedaban abajo del borde. Corregido a 780x760, que
-  es el alto real del formulario medido widget por widget.
+  cuatro botones de acción quedaban abajo del borde. Corregido, y después
+  rediseñada con aspecto de consola de análisis. El mínimo real es 820x760,
+  medido widget por widget: ahí nada se corta y la consola conserva seis
+  renglones. Hay captura en `docs/interfaz.png`.
 - El `.exe` se arma con `build.bat` y arranca. Son 13,4 MB y PyInstaller lo
   hace en modo onefile, así que el proceso padre es el bootloader y la ventana
   la abre un proceso hijo con el mismo nombre. Buscar la ventana en el padre no

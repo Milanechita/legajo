@@ -118,27 +118,17 @@ Sale así:
 Para quien no quiere tocar la terminal hay una ventana con selectores de
 archivo, la consola embebida y un botón para abrir el informe cuando termina.
 
-```
-  ┌────────────────────────────────────────────────────────────┐
-  │  legajo                                                    │
-  │  Screening, beneficiario final, riesgo, monitoreo y ROS    │
-  │                                                            │
-  │  ┌─ Archivos de entrada ──────────────────────────────┐   │
-  │  │  Padrón de clientes  *  [ clientes.csv    ] Examinar│   │
-  │  │  Carpeta de listas   *  [ listas/         ] Examinar│   │
-  │  │  Estructura societaria  [ estructura.csv  ] Examinar│   │
-  │  │  Operatoria             [ operaciones.csv ] Examinar│   │
-  │  └────────────────────────────────────────────────────┘   │
-  │                                                            │
-  │  [ Correr circuito ] [ Armar ROS ]      [ Abrir informe ]  │
-  │                                                            │
-  │  ┌─ Salida ───────────────────────────────────────────┐   │
-  │  │ [1/4] Screening: 15 cliente(s) contra 725           │   │
-  │  │ [4/4] Congelamiento administrativo                  │   │
-  │  │ ATENCION: 5 alerta(s) con el plazo vencido          │   │
-  │  └────────────────────────────────────────────────────┘   │
-  └────────────────────────────────────────────────────────────┘
-```
+![La interfaz de legajo, con el circuito ya corrido sobre los datos de ejemplo](docs/interfaz.png)
+
+El aspecto es de consola de análisis y no de formulario de oficina. Un
+analista mira esta pantalla varias horas seguidas, y el contraste alto sobre
+fondo oscuro cansa menos que una planilla blanca. El encabezado lleva el
+estado de la corrida, cuánto tardó y cuántas líneas devolvió.
+
+Todo sale de tkinter puro, sin imágenes ni tipografías de afuera. La barra de
+título la pinta Windows y no Tk, así que va una llamada a `dwmapi` por ctypes
+para que no quede una franja blanca arriba de una ventana negra. Si el
+Windows es viejo, la barra queda clara y no pasa nada más.
 
 La interfaz no reimplementa nada. Arma la línea de comandos y llama al mismo
 `cli.main` que usa la terminal, capturando lo que imprime.

@@ -9,6 +9,14 @@ nadie se enteraria hasta que un informe salga mal.
 
 Corre con tkinter, que viene con Python, asi que el ejecutable no arrastra
 ninguna dependencia grafica.
+
+La apariencia es de consola de analisis: fondo oscuro, monoespaciada y densa.
+La version anterior era gris claro con el argumento de que esto lo abre
+alguien de cumplimiento y no de diseno. El argumento no se sostiene: un
+analista mira esta pantalla varias horas seguidas, y el contraste alto sobre
+fondo oscuro cansa menos que una planilla blanca. Todo lo que se ve aca sale
+de tkinter puro, sin imagenes ni tipografias de afuera, porque el ejecutable
+tiene que seguir siendo un solo archivo.
 """
 
 from __future__ import annotations
@@ -17,6 +25,7 @@ import json
 import queue
 import sys
 import threading
+import time
 import tkinter as tk
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -27,18 +36,47 @@ from legajo.cli import main as cli_main
 TITULO = "legajo  ·  circuito PLA/FT"
 CONFIG = Path.home() / ".legajo_gui.json"
 
-# Paleta sobria. Esto lo abre alguien de cumplimiento, no de diseno.
-FONDO = "#F4F5F7"
-PANEL = "#FFFFFF"
-TINTA = "#1F2933"
-GRIS = "#6B7785"
-ACENTO = "#1F5C8B"
-CONSOLA_FONDO = "#1B222A"
-CONSOLA_TEXTO = "#D8DEE6"
+# Paleta de consola. El fondo no es negro puro sino azulado: el negro absoluto
+# contra texto claro produce halo en pantallas LCD y cansa la vista.
+FONDO = "#0B0E14"
+PANEL = "#111620"
+BORDE = "#1E2732"
+BORDE_VIVO = "#2E3B4A"
+TINTA = "#C9D4E0"
+GRIS = "#5D6976"
+ACENTO = "#4FD1C5"
+AMBAR = "#E0A33E"
+ROJO = "#E5484D"
+VERDE = "#3FB950"
+
+MONO = "Consolas"
+CAMPO_FONDO = "#0E131B"
+
+
+def espaciado(texto: str) -> str:
+    """Separa las letras de un rotulo.
+
+    Tk no tiene letter-spacing, y los encabezados en versalita separada son
+    la mitad del caracter de una consola de analisis. Meter los espacios a
+    mano es feo pero es lo unico que hay.
+    """
+    return " ".join(texto.upper())
+
+
+def _columnas(grilla) -> None:
+    """Fija el reparto de columnas de una grilla de campos.
+
+    El minsize es lo que mide el rotulo mas largo. Sin el, cada seccion
+    calcula su propio ancho y las cajas de texto de "Fuentes de datos" y las
+    de "Parametros" arrancan en x distintos, que en una pantalla asi se nota.
+    """
+    grilla.columnconfigure(0, minsize=186)
+    grilla.columnconfigure(1, minsize=16)
+    grilla.columnconfigure(2, weight=1)
 
 
 class Campo:
-    """Una fila de la grilla: etiqueta, caja de texto y boton de examinar."""
+    """Una fila de la grilla: rotulo, caja de texto y boton de examinar."""
 
     def __init__(self, padre, fila, etiqueta, ayuda, modo="archivo",
                  requerido=False, tipos=None):
@@ -46,18 +84,27 @@ class Campo:
         self.tipos = tipos or [("CSV o Excel", "*.csv *.xlsx"), ("Todos", "*.*")]
         self.valor = tk.StringVar()
 
-        marca = "  *" if requerido else ""
-        ttk.Label(padre, text=etiqueta + marca).grid(
-            row=fila, column=0, sticky="w", padx=(0, 10), pady=4)
+        # Cuatro columnas: rotulo, marca de obligatorio, caja y boton. El
+        # asterisco va en columna propia y no pegado al rotulo, porque si no
+        # los nombres largos lo empujan contra la caja y los cortos lo dejan
+        # flotando lejos.
+        ttk.Label(padre, text=etiqueta.upper(), style="Campo.TLabel").grid(
+            row=fila, column=0, sticky="w", pady=(6, 0))
 
-        entrada = ttk.Entry(padre, textvariable=self.valor, width=54)
-        entrada.grid(row=fila, column=1, sticky="ew", pady=4)
+        if requerido:
+            ttk.Label(padre, text="*", style="Requerido.TLabel").grid(
+                row=fila, column=1, sticky="w", padx=(6, 10), pady=(6, 0))
 
-        ttk.Button(padre, text="Examinar", width=11, command=self._elegir).grid(
-            row=fila, column=2, padx=(8, 0), pady=4)
+        entrada = ttk.Entry(padre, textvariable=self.valor, width=52,
+                            font=(MONO, 9), style="Consola.TEntry")
+        entrada.grid(row=fila, column=2, sticky="ew", pady=(6, 0))
 
-        ttk.Label(padre, text=ayuda, foreground=GRIS, font=("Segoe UI", 8)).grid(
-            row=fila + 1, column=1, sticky="w", pady=(0, 6))
+        ttk.Button(padre, text="EXAMINAR", width=11, style="Chico.TButton",
+                   command=self._elegir).grid(
+            row=fila, column=3, padx=(8, 0), pady=(6, 0))
+
+        ttk.Label(padre, text=ayuda, style="Ayuda.TLabel").grid(
+            row=fila + 1, column=2, sticky="w", pady=(1, 0))
 
     def _elegir(self):
         if self.modo == "carpeta":
@@ -84,62 +131,187 @@ class Aplicacion(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(TITULO)
-        self.geometry("880x760")
-        # El alto minimo es el que necesita el formulario entero, medido widget
-        # por widget: a 740 se corta la barra de estado y a 640 quedan afuera
-        # los cuatro botones de accion. Una ventana que se puede achicar hasta
-        # esconder "Correr circuito" es una ventana rota.
-        self.minsize(780, 760)
+        self.geometry("980x820")
+        # Medido widget por widget, achicando la ventana de a 40 px. Abajo de
+        # 680 de alto los botones de accion se van afuera del borde, y entre
+        # 680 y 760 la consola queda en tres renglones, que no alcanza para
+        # ver una corrida. 760 deja seis renglones y entra en una pantalla de
+        # notebook. El ancho que pide el formulario son 745, asi que 820 sobra.
+        self.minsize(820, 760)
         self.configure(bg=FONDO)
 
         self.cola: queue.Queue[str] = queue.Queue()
         self.corriendo = False
         self.ultimo_informe: Path | None = None
+        self.inicio: float | None = None
+        self.duracion: int | None = None
+        self.lineas = 0
 
         self._estilos()
         self._armar()
+        self._barra_oscura()
         self._cargar_config()
         self.after(80, self._drenar_cola)
+        self.after(200, self._latido)
         self.protocol("WM_DELETE_WINDOW", self._cerrar)
 
     # --- apariencia --------------------------------------------------------
 
+    def _barra_oscura(self):
+        """Pide a Windows que pinte la barra de titulo en oscuro.
+
+        Tk no la dibuja, la dibuja el sistema operativo, asi que sin esto
+        queda una franja blanca arriba de una ventana negra. Es una llamada a
+        dwmapi por ctypes, sin dependencias nuevas. Si el Windows es viejo o
+        la funcion no esta, no pasa nada y la barra queda como estaba.
+        """
+        if not sys.platform.startswith("win"):
+            return
+        try:
+            import ctypes
+
+            self.update_idletasks()
+            ventana = ctypes.windll.user32.GetParent(self.winfo_id())
+            prendido = ctypes.c_int(1)
+            # 20 es DWMWA_USE_IMMERSIVE_DARK_MODE desde Windows 10 20H1, y 19
+            # en las builds anteriores. Se corta en el primero que devuelve
+            # S_OK: mandar los dos hace que el segundo pise al primero.
+            for atributo in (20, 19):
+                if ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                        ventana, atributo, ctypes.byref(prendido),
+                        ctypes.sizeof(prendido)) == 0:
+                    break
+            # La barra ya dibujada no se repinta con el atributo nuevo. Hay
+            # que esconder la ventana y volver a mostrarla para que el sistema
+            # la redibuje.
+            self.withdraw()
+            self.deiconify()
+        except Exception:
+            pass
+
     def _estilos(self):
         estilo = ttk.Style(self)
         try:
+            # clam es el unico tema de los que trae tkinter que deja cambiar
+            # el color del borde y del fondo de los campos. Los de Windows
+            # dibujan con el tema del sistema operativo y quedan claros.
             estilo.theme_use("clam")
         except tk.TclError:
             pass
+
         estilo.configure(".", background=FONDO, foreground=TINTA,
-                         font=("Segoe UI", 9))
+                         font=(MONO, 9), borderwidth=0)
         estilo.configure("TFrame", background=FONDO)
-        estilo.configure("Panel.TFrame", background=PANEL, relief="flat")
-        estilo.configure("TLabelframe", background=FONDO, foreground=TINTA)
-        estilo.configure("TLabelframe.Label", background=FONDO,
-                         foreground=ACENTO, font=("Segoe UI", 9, "bold"))
-        estilo.configure("TLabel", background=FONDO)
-        estilo.configure("Titulo.TLabel", font=("Segoe UI", 15, "bold"),
+        estilo.configure("Panel.TFrame", background=PANEL)
+        estilo.configure("Borde.TFrame", background=BORDE)
+
+        estilo.configure("TLabel", background=FONDO, foreground=TINTA)
+        estilo.configure("Marca.TLabel", font=(MONO, 17, "bold"),
                          foreground=TINTA)
-        estilo.configure("Sub.TLabel", foreground=GRIS)
-        estilo.configure("TButton", padding=(10, 5))
-        estilo.configure("Principal.TButton", font=("Segoe UI", 9, "bold"))
+        estilo.configure("Lema.TLabel", font=(MONO, 8), foreground=GRIS)
+        estilo.configure("Seccion.TLabel", font=(MONO, 8, "bold"),
+                         foreground=ACENTO)
+        estilo.configure("Campo.TLabel", font=(MONO, 8), foreground=GRIS)
+        estilo.configure("Requerido.TLabel", font=(MONO, 9, "bold"),
+                         foreground=ACENTO)
+        estilo.configure("Ayuda.TLabel", font=(MONO, 8), foreground="#46505C")
+        estilo.configure("Estado.TLabel", font=(MONO, 9), foreground=TINTA)
+        estilo.configure("Metrica.TLabel", font=(MONO, 8), foreground=GRIS)
+
+        # Campos de texto. fieldbackground es el fondo de adentro, background
+        # el del marco: en clam hay que poner los dos o queda un borde claro.
+        estilo.configure("Consola.TEntry",
+                         fieldbackground=CAMPO_FONDO, background=CAMPO_FONDO,
+                         foreground=TINTA, insertcolor=ACENTO,
+                         bordercolor=BORDE, lightcolor=BORDE, darkcolor=BORDE,
+                         borderwidth=1, padding=5)
+        estilo.map("Consola.TEntry",
+                   bordercolor=[("focus", ACENTO)],
+                   lightcolor=[("focus", ACENTO)],
+                   darkcolor=[("focus", ACENTO)])
+
+        for nombre, fuente, relleno in (("TButton", (MONO, 9), (14, 7)),
+                                        ("Chico.TButton", (MONO, 8), (8, 5))):
+            estilo.configure(nombre, font=fuente, padding=relleno,
+                             background=PANEL, foreground=TINTA,
+                             bordercolor=BORDE, lightcolor=BORDE,
+                             darkcolor=BORDE, borderwidth=1, relief="flat",
+                             focuscolor=PANEL)
+            estilo.map(nombre,
+                       background=[("pressed", BORDE), ("active", BORDE_VIVO),
+                                   ("disabled", PANEL)],
+                       foreground=[("disabled", "#3A434E")],
+                       bordercolor=[("active", ACENTO)],
+                       lightcolor=[("active", ACENTO)],
+                       darkcolor=[("active", ACENTO)])
+
+        # El boton principal se distingue por el borde, no por el relleno: un
+        # bloque de color solido en una pantalla oscura tira demasiado la
+        # vista para algo que se aprieta una vez por corrida.
+        estilo.configure("Principal.TButton", font=(MONO, 9, "bold"),
+                         foreground=ACENTO, background=PANEL,
+                         bordercolor=ACENTO, lightcolor=ACENTO,
+                         darkcolor=ACENTO, borderwidth=1, padding=(14, 7),
+                         focuscolor=PANEL)
+        estilo.map("Principal.TButton",
+                   background=[("pressed", BORDE), ("active", "#16212A"),
+                               ("disabled", PANEL)],
+                   foreground=[("disabled", "#2F4A47")])
+
+        estilo.configure("Vertical.TScrollbar", background=BORDE,
+                         troughcolor=FONDO, bordercolor=FONDO,
+                         arrowcolor=GRIS, lightcolor=BORDE, darkcolor=BORDE,
+                         borderwidth=0, arrowsize=12)
+        estilo.map("Vertical.TScrollbar",
+                   background=[("active", BORDE_VIVO)])
+
+    def _regla(self, padre, fila, texto):
+        """Encabezado de seccion: rotulo en versalita y linea al ras."""
+        franja = ttk.Frame(padre)
+        franja.grid(row=fila, column=0, sticky="ew", pady=(16, 8))
+        franja.columnconfigure(1, weight=1)
+        ttk.Label(franja, text=espaciado(texto), style="Seccion.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 10))
+        linea = ttk.Frame(franja, style="Borde.TFrame", height=1)
+        linea.grid(row=0, column=1, sticky="ew")
 
     def _armar(self):
-        raiz = ttk.Frame(self, padding=16)
+        raiz = ttk.Frame(self, padding=(20, 16, 20, 14))
         raiz.pack(fill="both", expand=True)
         raiz.columnconfigure(0, weight=1)
 
+        # --- encabezado ---
         encabezado = ttk.Frame(raiz)
-        encabezado.grid(row=0, column=0, sticky="ew", pady=(0, 12))
-        ttk.Label(encabezado, text="legajo", style="Titulo.TLabel").pack(anchor="w")
-        ttk.Label(encabezado, style="Sub.TLabel",
-                  text="Screening de listas, beneficiario final, riesgo, "
-                       "monitoreo y armado de ROS").pack(anchor="w")
+        encabezado.grid(row=0, column=0, sticky="ew")
+        encabezado.columnconfigure(1, weight=1)
+
+        izq = ttk.Frame(encabezado)
+        izq.grid(row=0, column=0, sticky="w")
+        ttk.Label(izq, text="LEGAJO", style="Marca.TLabel").pack(anchor="w")
+        ttk.Label(izq, text=espaciado("circuito pla/ft"),
+                  style="Lema.TLabel").pack(anchor="w", pady=(2, 0))
+
+        der = ttk.Frame(encabezado)
+        der.grid(row=0, column=2, sticky="e")
+        fila_led = ttk.Frame(der)
+        fila_led.pack(anchor="e")
+        self.led = tk.Label(fila_led, text="●", bg=FONDO, fg=VERDE,
+                            font=(MONO, 11))
+        self.led.pack(side="left", padx=(0, 6))
+        self.estado = ttk.Label(fila_led, text="OPERATIVO", style="Estado.TLabel")
+        self.estado.pack(side="left")
+        self.reloj = ttk.Label(der, text="--:--  ·  0 líneas",
+                               style="Metrica.TLabel")
+        self.reloj.pack(anchor="e", pady=(3, 0))
+
+        separador = ttk.Frame(raiz, style="Borde.TFrame", height=1)
+        separador.grid(row=1, column=0, sticky="ew", pady=(14, 0))
 
         # --- entradas ---
-        caja = ttk.LabelFrame(raiz, text="  Archivos de entrada  ", padding=14)
-        caja.grid(row=1, column=0, sticky="ew")
-        caja.columnconfigure(1, weight=1)
+        self._regla(raiz, 2, "fuentes de datos")
+        caja = ttk.Frame(raiz)
+        caja.grid(row=3, column=0, sticky="ew")
+        _columnas(caja)
 
         self.padron = Campo(caja, 0, "Padrón de clientes",
                             "CSV o XLSX con los clientes a cotejar",
@@ -161,68 +333,96 @@ class Aplicacion(tk.Tk):
                               "queda sin perfil declarado")
 
         # --- parametros ---
-        params = ttk.LabelFrame(raiz, text="  Parámetros  ", padding=14)
-        params.grid(row=2, column=0, sticky="ew", pady=(12, 0))
-        params.columnconfigure(1, weight=1)
+        self._regla(raiz, 4, "parámetros")
+        params = ttk.Frame(raiz)
+        params.grid(row=5, column=0, sticky="ew")
+        _columnas(params)
 
         self.salida = Campo(params, 0, "Informe de salida",
                             "Se sobrescribe si ya existe",
                             modo="guardar", requerido=True)
 
-        ttk.Label(params, text="Umbral de reporte").grid(
-            row=2, column=0, sticky="w", padx=(0, 10))
+        ttk.Label(params, text="UMBRAL DE REPORTE", style="Campo.TLabel").grid(
+            row=2, column=0, sticky="w", pady=(6, 0))
         self.umbral = tk.StringVar()
-        ttk.Entry(params, textvariable=self.umbral, width=18).grid(
-            row=2, column=1, sticky="w")
-        ttk.Label(params, foreground=GRIS, font=("Segoe UI", 8),
+        ttk.Entry(params, textvariable=self.umbral, width=20, font=(MONO, 9),
+                  style="Consola.TEntry").grid(
+            row=2, column=2, sticky="w", pady=(6, 0))
+        ttk.Label(params, style="Ayuda.TLabel",
                   text="En pesos. Vacío usa 40 SMVM según la Res. UIF 78/2025").grid(
-            row=3, column=1, sticky="w", pady=(0, 4))
+            row=3, column=2, sticky="w", pady=(1, 0))
 
         # --- acciones ---
+        self._regla(raiz, 6, "acciones")
         acciones = ttk.Frame(raiz)
-        acciones.grid(row=3, column=0, sticky="ew", pady=(14, 10))
+        acciones.grid(row=7, column=0, sticky="ew")
 
-        self.btn_circuito = ttk.Button(acciones, text="Correr circuito",
+        self.btn_circuito = ttk.Button(acciones, text="CORRER CIRCUITO",
                                        style="Principal.TButton", width=20,
                                        command=self._correr_circuito)
         self.btn_circuito.pack(side="left")
 
-        self.btn_ros = ttk.Button(acciones, text="Armar borradores de ROS",
-                                  width=24, command=self._correr_ros)
+        self.btn_ros = ttk.Button(acciones, text="BORRADORES DE ROS",
+                                  width=22, command=self._correr_ros)
         self.btn_ros.pack(side="left", padx=8)
 
-        self.btn_listas = ttk.Button(acciones, text="Actualizar listas",
-                                     width=18, command=self._actualizar_listas)
+        self.btn_listas = ttk.Button(acciones, text="ACTUALIZAR LISTAS",
+                                     width=20, command=self._actualizar_listas)
         self.btn_listas.pack(side="left")
 
-        self.btn_abrir = ttk.Button(acciones, text="Abrir informe", width=16,
+        self.btn_abrir = ttk.Button(acciones, text="ABRIR INFORME", width=17,
                                     command=self._abrir_informe,
                                     state="disabled")
         self.btn_abrir.pack(side="right")
 
         # --- consola ---
-        consola = ttk.LabelFrame(raiz, text="  Salida  ", padding=8)
-        consola.grid(row=4, column=0, sticky="nsew")
-        raiz.rowconfigure(4, weight=1)
+        self._regla(raiz, 8, "salida")
+        consola = ttk.Frame(raiz, style="Borde.TFrame", padding=1)
+        consola.grid(row=9, column=0, sticky="nsew")
+        raiz.rowconfigure(9, weight=1)
         consola.columnconfigure(0, weight=1)
         consola.rowconfigure(0, weight=1)
 
-        self.log = tk.Text(consola, height=14, wrap="none", bd=0,
-                           bg=CONSOLA_FONDO, fg=CONSOLA_TEXTO,
-                           insertbackground=CONSOLA_TEXTO,
-                           font=("Consolas", 9), padx=10, pady=8)
+        self.log = tk.Text(consola, height=13, wrap="none", bd=0,
+                           bg=CAMPO_FONDO, fg=TINTA, insertbackground=ACENTO,
+                           selectbackground=BORDE_VIVO,
+                           font=(MONO, 9), padx=12, pady=10,
+                           highlightthickness=0)
         self.log.grid(row=0, column=0, sticky="nsew")
 
         barra = ttk.Scrollbar(consola, orient="vertical", command=self.log.yview)
         barra.grid(row=0, column=1, sticky="ns")
         self.log.configure(yscrollcommand=barra.set, state="disabled")
 
-        self.log.tag_configure("aviso", foreground="#E8B04B")
-        self.log.tag_configure("error", foreground="#E86C60")
-        self.log.tag_configure("ok", foreground="#7FBF7F")
+        self.log.tag_configure("aviso", foreground=AMBAR)
+        self.log.tag_configure("error", foreground=ROJO)
+        self.log.tag_configure("ok", foreground=VERDE)
+        self.log.tag_configure("orden", foreground=ACENTO)
+        self.log.tag_configure("tenue", foreground=GRIS)
 
-        self.estado = ttk.Label(raiz, text="Listo", style="Sub.TLabel")
-        self.estado.grid(row=5, column=0, sticky="w", pady=(8, 0))
+        self._escribir("Sin corridas todavía. Completá las fuentes de datos "
+                       "y apretá CORRER CIRCUITO.\n", "tenue")
+        self.lineas = 0   # el cartel de bienvenida no es salida de una corrida
+
+    # --- telemetria --------------------------------------------------------
+
+    def _senal(self, color: str, texto: str):
+        self.led.configure(fg=color)
+        self.estado.configure(text=texto)
+
+    def _latido(self):
+        """Refresca el cronometro y el contador de lineas de la corrida."""
+        if self.corriendo and self.inicio is not None:
+            transcurrido = int(time.monotonic() - self.inicio)
+        else:
+            # Terminada la corrida el reloj queda congelado en lo que tardo.
+            # Volver a cero borraria el unico dato de cuanto costo.
+            transcurrido = self.duracion
+        reloj = ("--:--" if transcurrido is None
+                 else f"{transcurrido // 60:02d}:{transcurrido % 60:02d}")
+        plural = "línea" if self.lineas == 1 else "líneas"
+        self.reloj.configure(text=f"{reloj}  ·  {self.lineas} {plural}")
+        self.after(250, self._latido)
 
     # --- ejecucion ---------------------------------------------------------
 
@@ -231,11 +431,14 @@ class Aplicacion(tk.Tk):
         if self.corriendo:
             return
         self.corriendo = True
+        self.inicio = time.monotonic()
+        self.duracion = None
+        self.lineas = 0
         for boton in (self.btn_circuito, self.btn_ros, self.btn_listas):
             boton.configure(state="disabled")
-        self.estado.configure(text=f"{etiqueta} en curso...")
+        self._senal(AMBAR, etiqueta.upper() + " EN CURSO")
         self._limpiar_log()
-        self._escribir(f"$ python -m legajo {' '.join(argv)}\n\n")
+        self._escribir(f"$ python -m legajo {' '.join(argv)}\n\n", "orden")
 
         def trabajo():
             salida = _Tubo(self.cola)
@@ -329,15 +532,16 @@ class Aplicacion(tk.Tk):
             pass
         self.after(80, self._drenar_cola)
 
-    def _escribir(self, texto: str):
+    def _escribir(self, texto: str, forzar: str = ""):
         self.log.configure(state="normal")
         for linea in texto.splitlines(keepends=True):
             plano = linea.lower()
-            etiqueta = ("error" if "error" in plano else
-                        "aviso" if ("atencion" in plano or "aviso" in plano
-                                    or "atención" in plano) else
-                        "ok" if "informe:" in plano else "")
+            etiqueta = forzar or ("error" if "error" in plano else
+                                  "aviso" if ("atencion" in plano or "aviso" in plano
+                                              or "atención" in plano) else
+                                  "ok" if "informe:" in plano else "")
             self.log.insert("end", linea, etiqueta)
+            self.lineas += 1
         self.log.see("end")
         self.log.configure(state="disabled")
 
@@ -348,15 +552,17 @@ class Aplicacion(tk.Tk):
 
     def _terminar(self, codigo: int):
         self.corriendo = False
+        if self.inicio is not None:
+            self.duracion = int(time.monotonic() - self.inicio)
         for boton in (self.btn_circuito, self.btn_ros, self.btn_listas):
             boton.configure(state="normal")
 
         if codigo == 0:
-            self.estado.configure(text="Terminado sin errores")
+            self._senal(VERDE, "TERMINADO SIN ERRORES")
             if self.ultimo_informe and self.ultimo_informe.exists():
                 self.btn_abrir.configure(state="normal")
         else:
-            self.estado.configure(text=f"Terminó con código {codigo}")
+            self._senal(ROJO, f"TERMINÓ CON CÓDIGO {codigo}")
         self._guardar_config()
 
     def _abrir_informe(self):
