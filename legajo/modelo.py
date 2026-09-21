@@ -79,6 +79,104 @@ class Evidencia:
         }
 
 
+# --- CUIT y CUIL -----------------------------------------------------------
+#
+# El digito verificador es modulo 11 sobre los primeros diez digitos. No es un
+# valor normativo que cambie con una resolucion: es un algoritmo fijo, asi que
+# va escrito y no parametrizado.
+#
+# Sirve para lo que importa aca: un CUIT mal tipeado deja de matchear contra
+# las fuentes externas, y el cliente queda sin constatar sin que nadie se
+# entere. Es mejor rechazarlo en la carga.
+
+_PESOS_CUIT = (5, 4, 3, 2, 7, 6, 5, 4, 3, 2)
+
+# El prefijo dice que clase de persona es. Un 30 con tipo PERSONA es un error
+# de carga, y uno de los dos datos esta mal.
+PREFIJOS_PERSONA_HUMANA = frozenset({"20", "23", "24", "25", "26", "27"})
+PREFIJOS_PERSONA_JURIDICA = frozenset({"30", "33", "34"})
+
+
+def solo_digitos(texto: str) -> str:
+    return "".join(c for c in (texto or "") if c.isdigit())
+
+
+def digito_verificador_cuit(primeros_diez: str) -> int | None:
+    """Digito verificador de los primeros diez digitos de un CUIT.
+
+    Devuelve None cuando el calculo da 10, que no es un digito. Ese caso no
+    produce un CUIT invalido sino que obliga a cambiar el prefijo: AFIP pasa
+    el 20 o el 27 a 23 y recalcula. Por eso ningun CUIT valido puede tener
+    como verificador el resultado 10.
+    """
+    if len(primeros_diez) != 10 or not primeros_diez.isdigit():
+        return None
+    suma = sum(int(d) * p for d, p in zip(primeros_diez, _PESOS_CUIT))
+    resto = suma % 11
+    if resto == 0:
+        return 0
+    if resto == 1:
+        return None
+    return 11 - resto
+
+
+@dataclass(frozen=True)
+class Validacion:
+    """Resultado de validar un identificador.
+
+    Lleva el motivo y no solo un booleano porque el analista tiene que poder
+    corregir la carga, y "CUIT invalido" no le dice si es el largo, el digito
+    o el prefijo.
+    """
+
+    valido: bool
+    motivo: str = ""
+
+    def __bool__(self) -> bool:
+        return self.valido
+
+
+def validar_cuit(numero: str, tipo_persona: str | None = None) -> Validacion:
+    """Valida largo, digito verificador y, si se pasa, coherencia del prefijo.
+
+    `tipo_persona` es el tipo del cliente: PERSONA o cualquier otro valor, que
+    aguas arriba significa persona juridica.
+    """
+    limpio = solo_digitos(numero)
+    if not limpio:
+        return Validacion(False, "sin numero")
+    if len(limpio) != 11:
+        return Validacion(False, f"tiene {len(limpio)} digitos y un CUIT tiene 11")
+
+    prefijo = limpio[:2]
+    if prefijo not in (PREFIJOS_PERSONA_HUMANA | PREFIJOS_PERSONA_JURIDICA):
+        return Validacion(False, f"prefijo {prefijo} no esta asignado")
+
+    esperado = digito_verificador_cuit(limpio[:10])
+    if esperado is None or esperado != int(limpio[10]):
+        return Validacion(False, "digito verificador incorrecto")
+
+    if tipo_persona:
+        humana = tipo_persona.strip().upper() == "PERSONA"
+        if humana and prefijo in PREFIJOS_PERSONA_JURIDICA:
+            return Validacion(False, f"prefijo {prefijo} es de persona juridica")
+        if not humana and prefijo in PREFIJOS_PERSONA_HUMANA:
+            return Validacion(False, f"prefijo {prefijo} es de persona humana")
+
+    return Validacion(True)
+
+
+def armar_cuit(prefijo: str, documento: str) -> str:
+    """Arma un CUIT con su digito verificador. Para generar datos de prueba.
+
+    Devuelve cadena vacia cuando la combinacion no admite verificador, que es
+    el caso en que AFIP cambiaria el prefijo.
+    """
+    base = f"{prefijo}{solo_digitos(documento).zfill(8)}"
+    dv = digito_verificador_cuit(base)
+    return "" if dv is None else f"{base}{dv}"
+
+
 @dataclass(frozen=True)
 class Documento:
     """Identificador de una persona o entidad."""
@@ -90,6 +188,17 @@ class Documento:
         """Forma canonica para comparacion exacta."""
         limpio = "".join(c for c in self.numero if c.isalnum()).upper()
         return f"{self.tipo.upper()}:{limpio}"
+
+    def validar(self, tipo_persona: str | None = None) -> Validacion:
+        """Valida el identificador cuando se sabe como hacerlo.
+
+        Un pasaporte o un tax id extranjero no tienen regla de validacion
+        conocida, asi que se dan por validos. Marcarlos como invalidos seria
+        inventar un hallazgo.
+        """
+        if self.tipo.strip().upper() in {"CUIT", "CUIL"}:
+            return validar_cuit(self.numero, tipo_persona)
+        return Validacion(True)
 
 
 @dataclass
@@ -105,6 +214,27 @@ class Cliente:
     pais_residencia: str | None = None
     actividad: str | None = None
     oferta_publica: bool = False  # exceptuada de identificar beneficiario final
+
+    # --- datos del cliente argentino ---
+    #
+    # Todos son lo que el cliente declaro en el alta, igual que los de arriba.
+    # Lo que despues se verifique contra ARCA, el BCRA o un informe comercial
+    # entra como constatacion y no pisa estos campos: la gracia del modelo es
+    # poder comparar los dos.
+    #
+    # No esta el codigo de actividad de ARCA, a proposito. Un cliente declara
+    # su actividad en palabras, no en codigo CLAE. El codigo lo trae ARCA y
+    # por ahora vive como constatacion, no como declaracion.
+    condicion_iva: str | None = None        # RI | MONOTRIBUTO | EXENTO | CF
+    categoria_monotributo: str | None = None
+    provincia: str | None = None
+    localidad: str | None = None
+    domicilio: str | None = None
+    codigo_postal: str | None = None
+    telefono: str | None = None
+    email: str | None = None
+    fecha_alta: str | None = None           # ISO, cuando se abrio la relacion
+    es_sujeto_obligado: bool = False        # declarado, Ley 25.246 art. 20
 
 
 @dataclass

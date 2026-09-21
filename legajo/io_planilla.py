@@ -59,6 +59,12 @@ def _fila_a_cliente(fila: dict[str, str]) -> Cliente:
         valor = (fila.get(clave) or "").strip()
         return valor or None
 
+    # El CUIT va en columna propia porque un cliente argentino tiene DNI y
+    # CUIT a la vez, y el par documento_tipo/documento_numero solo trae uno.
+    cuit = (fila.get("cuit") or "").strip()
+    if cuit:
+        documentos.append(Documento(tipo="CUIT", numero=cuit))
+
     return Cliente(
         cliente_id=(fila.get("cliente_id") or "").strip(),
         nombre=(fila.get("nombre") or "").strip(),
@@ -69,6 +75,16 @@ def _fila_a_cliente(fila: dict[str, str]) -> Cliente:
         pais_residencia=opcional("pais_residencia"),
         actividad=opcional("actividad"),
         oferta_publica=_booleano(fila.get("oferta_publica", "")),
+        condicion_iva=opcional("condicion_iva"),
+        categoria_monotributo=opcional("categoria_monotributo"),
+        provincia=opcional("provincia"),
+        localidad=opcional("localidad"),
+        domicilio=opcional("domicilio"),
+        codigo_postal=opcional("codigo_postal"),
+        telefono=opcional("telefono"),
+        email=opcional("email"),
+        fecha_alta=opcional("fecha_alta"),
+        es_sujeto_obligado=_booleano(fila.get("es_sujeto_obligado", "")),
     )
 
 

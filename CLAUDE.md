@@ -82,6 +82,8 @@ proyecto.
 | Las constataciones son append-only | Una corrección es una constatación nueva que tapa a la anterior, nunca un borrado. Sin eso no se puede mostrar qué se verificó y cuándo |
 | `campo` de Constatación es enumeración cerrada | Hay una prueba que exige que cada valor exista en `Cliente`. Un renombre rompe la prueba y no el análisis en silencio |
 | COMPLETA no se mezcla con DISCREPA | Un campo que el cliente nunca declaró no contradice nada. Juntarlos infla las discrepancias con ruido |
+| Los identificadores del ejemplo van fuera del rango asignado | El repo es público. Un CUIT real en una demo de lavado asocia a una persona de verdad con una alerta. Hay una prueba que lo exige |
+| Un documento no verificado contra la norma no es opcional | `SIN_VERIFICAR` manda al analista a leer la norma. `OPCIONAL` le diría que ya se miró, y nadie lo miró |
 | El expediente es append-only | Es el producto. Sin traza no hay nada que mostrarle a una inspección |
 | Se calibra para recall, no precisión | Un falso negativo es incumplimiento del Cap. IV. Un falso positivo cuesta una hora |
 | El umbral del 10% va a la suma de caminos | Arista por arista permite armar estructuras que lo esquivan |
@@ -104,7 +106,7 @@ proyecto.
 ## Comandos
 
 ```bash
-python -m pytest tests/ -q          # 251 pruebas, tardan alrededor de un segundo
+python -m pytest tests/ -q          # 286 pruebas, tardan alrededor de un segundo
 
 python -m legajo evaluar --listas <dir> --dificiles evaluacion/casos_dificiles.csv
                                    # recall y falsas alertas, ~1 min con 20 nucleos
@@ -129,7 +131,7 @@ justificar por qué no alcanza con la biblioteca estándar.
 
 ## Estado y pendientes
 
-**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 251 pruebas, informe de diez hojas, visor web, interfaz
+**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 286 pruebas, informe de diez hojas, visor web, interfaz
 de escritorio y empaquetado.
 
 **Probado en Windows 11 el 20/09/2026:**
@@ -144,8 +146,14 @@ de escritorio y empaquetado.
   la abre un proceso hijo con el mismo nombre. Buscar la ventana en el padre no
   la encuentra.
 
-**En curso:** Fase 1 del roadmap. Terminado el ítem 1.1 (procedencia), en
-`legajo/procedencia.py`. Sujeto obligado por defecto: BANCO, Res. UIF 14/2023.
+**En curso:** Fase 1 del roadmap. Terminados 1.1 (procedencia), 1.2 (sujeto
+obligado), 1.3 (validación de CUIT) y 1.5 (padrón argentino de ejemplo, en
+`ejemplos/clientes_ar.csv`). Sujeto obligado por defecto: BANCO, Res. UIF
+14/2023.
+
+**Frenado por falta de datos normativos:** 1.4 necesita el texto vigente de la
+Res. 78/2023 para ALYC, y 3.3 las escalas de monotributo. No se completan de
+memoria. 2.2 y 2.3 esperan definición antes de implementar.
 
 **Pendientes del proyecto viejo, ordenados por valor:**
 
