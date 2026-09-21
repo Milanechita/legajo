@@ -80,6 +80,8 @@ proyecto.
 | El plazo se deriva del régimen | Un campo cargado a mano es un campo que alguien carga mal |
 | El sistema no emite ningún ROS | La conversión de inusual a sospechosa es criterio humano (Res. 56/2024) |
 | El índice descarta trabajo, no coincidencias | Hay una prueba que corre las dos búsquedas y exige el mismo resultado |
+| Un buque no se coteja contra un cliente persona | Un cliente es persona o sociedad, nunca un barco. Baja la falsa alerta de 81% a 61% sin mover el recall en tres semillas |
+| El filtro por tipo estricto está descartado | Medido: se lleva un tercio del recall. Pierde unipersonales, tipos mal cargados y buques homónimos de su naviera |
 | La interfaz llama a `cli.main` | Si duplicara lógica, las dos versiones divergen y nadie se entera |
 
 ---
@@ -87,7 +89,7 @@ proyecto.
 ## Comandos
 
 ```bash
-python -m pytest tests/ -q          # 209 pruebas, tardan menos de un segundo
+python -m pytest tests/ -q          # 212 pruebas, tardan menos de un segundo
 
 python -m legajo evaluar --listas <dir> --dificiles evaluacion/casos_dificiles.csv
                                    # recall y falsas alertas, ~1 min con 20 nucleos
@@ -109,7 +111,7 @@ justificar por qué no alcanza con la biblioteca estándar.
 
 ## Estado y pendientes
 
-**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 209 pruebas, informe de diez hojas, interfaz
+**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 212 pruebas, informe de diez hojas, interfaz
 de escritorio y empaquetado.
 
 **Sin probar todavía:**
@@ -120,12 +122,11 @@ de escritorio y empaquetado.
 
 **Pendientes ordenados por valor:**
 
-1. **Compatibilidad de tipo en el screening.** Salió de medir con
-   `python -m legajo evaluar`: el 82% de los clientes limpios genera alerta,
-   y 386 de 985 alertas son contra buques. Filtrar por tipo
-   compatible bajó la falsa alerta a 33% con el mismo recall, pero los
-   positivos sintéticos son persona contra persona por construcción, así que
-   esa prueba no alcanza. Hay que discutirlo antes de tocar el matcher.
+1. **El ruido que queda.** La falsa alerta está en 61%, y las que sobran son
+   contra entidades (90% de las entidades argentinas limpias alertan). Bajar
+   `PESO_COBERTURA_CORTA` de 0.60 a 0.45 la lleva a 50%, pero cuesta recall:
+   pierde `entidad_sin_ultimo_token` en dos de tres semillas. Medido, no
+   aplicado. Hay que discutirlo, porque toca la calibración.
 2. **Demo que se vea sin clonar.** Un reclutador de compliance no va a correr
    `python -m legajo`.
 3. **Triangulación de fondos** entre cuentas vinculadas. Necesita el grafo de
@@ -151,6 +152,10 @@ vieja, los resultados están mal y el programa no avisa.
 | Listas GAFI | plenario 19 junio 2026 | tres veces al año |
 | ARCA no cooperantes | Decreto 398/2026 | por decreto |
 | RePET | export de septiembre 2026 | manual, no hay API |
+
+Las listas reales no están en el repo. Se bajan con
+`python -m legajo actualizar-listas --listas <dir>` y pesan unos 9 MB.
+Las de `ejemplos/listas` son de juguete, sirven para las pruebas y no para medir.
 
 ---
 

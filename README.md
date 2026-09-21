@@ -526,11 +526,26 @@ antes     118 min   proyectado a 50.000 clientes
 después    64 min   con recall del 100%
 ```
 
+Esos minutos son contra un padrón de 2.681 nombres, que es lo que tenía a
+mano cuando lo medí. Con las listas completas de OFAC y ONU el padrón son
+20.404 designados y 43.381 nombres contando alias, y el costo real es otro:
+
+```
+sin índice   2.105 ms por cliente    1.754 min proyectado a 50.000
+con índice   1.054 ms por cliente      879 min proyectado a 50.000
+```
+
+El índice ahorra la mitad del trabajo, no un orden de magnitud. Con
+`MINIMO_TRIGRAMAS = 1` el filtro deja pasar 10.144 candidatos de 20.404, y
+subirlo pierde coincidencias. Quince horas de un núcleo para un padrón de
+50.000 clientes es un batch nocturno repartido entre procesos, y eso hay que
+decirlo en vez de dejar un número lindo medido contra una lista de juguete.
+
 ### Cuánto ruido cuesta el recall
 
 Decir que el sistema está calibrado para recall era una afirmación. Ahora hay
-un comando que la mide, `python -m legajo evaluar`, contra las listas reales
-(20.404 designados de OFAC y ONU al 19 de septiembre de 2026).
+un comando que la mide, `python -m legajo evaluar`, contra las listas reales:
+20.404 designados de OFAC y ONU al 19 de septiembre de 2026.
 
 Hay dos conjuntos y se reportan separados. El sintético se genera desde la
 lista real con semilla fija: designados con el orden cambiado, sin el nombre
@@ -541,26 +556,65 @@ transliteraciones como `Khaled Sheikh Mohamed` o `Hizbullah`.
 
 ```
 umbral   recall   precisión   falsa alerta
-    78    99,2%      64,5%          81,9%   <- revisión
-    85    97,1%      82,9%          30,0%
-    92    82,5%      98,0%           2,5%   <- probable
+    78    99,4%      78,5%          61,3%   <- revisión
+    85    98,1%      96,4%           8,1%
+    92    85,0%     100,0%           0,0%   <- probable
 ```
 
-El recall aguanta. Los 18 casos difíciles positivos salen detectados, y en el
-sintético solo se pierden 2 de 240, ambos del tipo "sin nombre del medio".
-
-El costo está del otro lado. Con el umbral de revisión en 78, el 82% de los
-clientes limpios genera al menos una alerta, unas 7,5 en promedio. Los
-nombres argentinos comunes chocan con designados de una sola palabra
-(`ROMINA`, `CAROL`, `ARIA`) y con nombres de buques. De las 985 alertas sobre
-clientes limpios, 386 son contra buques y 558 contra entidades.
-Solo 41 son contra personas.
+El recall aguanta. Los 18 casos difíciles positivos salen detectados y en el
+sintético se pierden 2 de 360, los dos del tipo "sin nombre del medio".
 
 Cómo leer estos números: el recall es contra el modelo de error que armé yo,
 no contra el mundo. Las perturbaciones las elegí yo y un padrón real puede
-fallar de maneras que no imaginé. Y los negativos no son una muestra de un
+fallar de maneras que no imaginé. Los negativos tampoco son una muestra de un
 padrón de clientes real. Sirven para comparar cambios entre sí, no para
 prometer una tasa de alertas.
+
+### Un cliente nunca es un barco
+
+La primera medición dio 81,9% de falsa alerta: de cada diez clientes limpios,
+ocho le llegaban a un analista. Mirando contra qué saltaban, de 985 alertas
+sobre clientes limpios 386 eran contra buques y aeronaves.
+
+La regla que salió de ahí es de dominio y no de umbral. Un cliente es una
+persona humana o una sociedad, nunca un buque ni una aeronave, así que un
+designado de tipo buque no se cotea por nombre contra un cliente persona.
+Sigue valiendo contra clientes sociedad, porque la naviera suele llamarse
+igual que su barco, y sigue valiendo por documento en los dos casos.
+
+```
+                        recall   falsa alerta
+sin la regla             99,4%          81,0%
+con la regla             99,4%          61,3%
+```
+
+Verificado con tres semillas del conjunto: el recall no se movió en ninguna,
+ni en los casos difíciles.
+
+### El filtro por tipo que no se puede hacer
+
+El paso siguiente parecía obvio: si el buque contra persona es ruido, cotejar
+solo tipos compatibles debería serlo también. Persona contra persona, entidad
+contra entidad. La primera medición decía que bajaba la falsa alerta al 33%
+sin tocar el recall.
+
+Era un artefacto del conjunto. Los positivos salían de perturbar designados
+conservando su tipo, así que no había un solo caso que cruzara tipos y
+cualquier filtro por tipo daba gratis.
+
+Agregué tres tipos de caso que sí cruzan: el cliente que es la unipersonal de
+una persona designada, el tipo mal cargado en el padrón, y el buque que se
+llama igual que la empresa que lo opera. Con esos casos adentro:
+
+```
+                              recall   falsa alerta
+base                           99,4%          80,6%
+tipo estricto compatible       66,1%          35,0%
+```
+
+Un tercio del recall. Pierde las 40 unipersonales, los 40 tipos mal cargados
+y los 40 buques. El filtro estricto está descartado, y la medición que lo
+descartó solo existió porque primero arreglé la vara de medir.
 
 ---
 

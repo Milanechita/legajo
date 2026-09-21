@@ -121,6 +121,11 @@ def cotejar_cliente(
             )
             continue
 
+        # El corte por tipo va despues del documento y antes del nombre, a
+        # proposito: filtra el cotejo difuso sin tocar el determinista.
+        if designado.tipo in politica.tipos_solo_no_persona and cliente.tipo == "PERSONA":
+            continue
+
         score, alias = mejor_alias(
             cliente.nombre, designado.todos_los_nombres, es_entidad=es_entidad
         )

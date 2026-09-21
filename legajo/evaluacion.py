@@ -69,8 +69,11 @@ ZONAS = (
     "Andina", "Rioplatense", "del Plata", "Mediterranea", "Austral",
 )
 
+SUFIJOS_UNIPERSONAL = ("S.R.L.", "S.A.", "y Asociados", "e Hijos", "SAS")
+
 # Tipos de caso. Los positivos tienen designado esperado, los negativos no.
-POSITIVOS = ("exacto", "sin_medio", "iniciales", "typo", "alias", "entidad_sin_ultimo_token")
+POSITIVOS = ("exacto", "sin_medio", "iniciales", "typo", "alias", "entidad_sin_ultimo_token",
+             "unipersonal", "tipo_mal_cargado", "buque_como_empresa")
 NEGATIVOS = ("comun_argentino", "homonimo_parcial", "entidad_argentina")
 
 
@@ -147,6 +150,9 @@ def generar_sinteticos(padron: Padron, por_tipo: int = 60, semilla: int = SEMILL
                       key=lambda d: (d.lista, d.id_origen))
     entidades = sorted((d for d in padron.designados if d.tipo == "ENTIDAD" and len(d.nombre.split()) >= 3),
                        key=lambda d: (d.lista, d.id_origen))
+    naves = sorted((d for d in padron.designados if d.tipo in ("BUQUE", "AERONAVE")
+                    and len(d.nombre.split()) >= 2),
+                   key=lambda d: (d.lista, d.id_origen))
     con_alias = [d for d in personas if d.alias]
     con_medio = [d for d in personas if len(_partir(d.nombre)) >= 3]
     largos = [d for d in personas if all(len(t) >= 5 for t in _partir(d.nombre)[:1])]
@@ -164,6 +170,20 @@ def generar_sinteticos(padron: Padron, por_tipo: int = 60, semilla: int = SEMILL
         n += 1
         casos.append(CasoEvaluacion(
             cliente=_cliente_desde(d, nombre, f"S{n:05d}"),
+            tipo_caso=tipo_caso,
+            esperados=frozenset({(d.lista, d.id_origen)}),
+        ))
+
+    def nuevo_con_tipo(d: Designado, nombre: str, tipo_caso: str, tipo_cliente: str) -> None:
+        """Igual que nuevo(), pero el tipo del cliente no sale del designado.
+
+        Los datos secundarios se omiten a proposito: si el padron confundio el
+        tipo, no hay razon para suponer que la fecha de nacimiento este bien.
+        """
+        nonlocal n
+        n += 1
+        casos.append(CasoEvaluacion(
+            cliente=Cliente(cliente_id=f"S{n:05d}", nombre=nombre, tipo=tipo_cliente),
             tipo_caso=tipo_caso,
             esperados=frozenset({(d.lista, d.id_origen)}),
         ))
@@ -192,6 +212,27 @@ def generar_sinteticos(padron: Padron, por_tipo: int = 60, semilla: int = SEMILL
     for d in muestra(entidades):
         t = d.nombre.split()
         nuevo(d, " ".join(t[:-1]), "entidad_sin_ultimo_token")
+
+    # Los tres tipos que siguen existen para poder medir que cuesta filtrar
+    # por tipo compatible. Sin ellos el conjunto es persona contra persona y
+    # entidad contra entidad por construccion, y cualquier filtro por tipo da
+    # gratis: el recall no se mueve porque no hay un solo caso que lo cruce.
+
+    # Unipersonal: el cliente es la sociedad de una persona designada. El
+    # padron lo trae como ENTIDAD y la lista tiene a la persona.
+    for d in muestra(personas):
+        nuevo_con_tipo(d, f"{' '.join(_partir(d.nombre))} {rng.choice(SUFIJOS_UNIPERSONAL)}",
+                       "unipersonal", "ENTIDAD")
+
+    # Tipo mal cargado: mismo nombre, tipo invertido. Pasa en cualquier padron
+    # con carga manual, y es justamente el caso que un filtro por tipo pierde.
+    for d in muestra(entidades):
+        nuevo_con_tipo(d, d.nombre, "tipo_mal_cargado", "PERSONA")
+
+    # Buque o aeronave cuyo nombre es el de la empresa que lo opera. Un cliente
+    # nunca es un barco, pero puede llamarse igual que el barco sancionado.
+    for d in muestra(naves):
+        nuevo_con_tipo(d, d.nombre, "buque_como_empresa", "ENTIDAD")
 
     # Negativos. Por construccion no son ningun designado: cualquier alerta
     # sobre ellos cuenta como falso positivo, incluso si resulta ser un

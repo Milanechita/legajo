@@ -193,3 +193,31 @@ def test_evidencia_es_append_only():
     # Las entradas son inmutables.
     with pytest.raises(Exception):
         caso.evidencia[0].accion = "MODIFICADO"
+
+
+def buque(nombre: str) -> Designado:
+    return Designado("OFAC_SDN", "B1", nombre, tipo="BUQUE")
+
+
+def test_una_persona_no_se_alerta_contra_un_buque_homonimo():
+    # "Natalia Benitez" contra el buque NATALIA era ruido garantizado: un
+    # cliente puede ser una persona o una sociedad, nunca un barco.
+    cliente = Cliente("C1", "Natalia Benitez", tipo="PERSONA")
+    assert cotejar_cliente(cliente, padron_de(buque("NATALIA BENITEZ"))) == []
+
+
+def test_una_empresa_si_se_alerta_contra_un_buque_homonimo():
+    # La naviera suele llamarse igual que su barco, y ahi la coincidencia vale.
+    cliente = Cliente("C1", "Natalia Benitez S.A.", tipo="ENTIDAD")
+    assert cotejar_cliente(cliente, padron_de(buque("NATALIA BENITEZ"))) != []
+
+
+def test_el_documento_repetido_contra_un_buque_alerta_aunque_el_cliente_sea_persona():
+    # El corte por tipo es solo para el cotejo difuso. Un identificador
+    # identico no se explica por homonimia, asi que no se filtra.
+    nave = Designado("OFAC_SDN", "B1", "OTRO NOMBRE", tipo="BUQUE",
+                     documentos=("PASAPORTE:X99",))
+    cliente = Cliente("C1", "Juan Perez", tipo="PERSONA",
+                      documentos=[Documento("PASAPORTE", "X99")])
+    [c] = cotejar_cliente(cliente, padron_de(nave))
+    assert c.criterio == "DOCUMENTO"

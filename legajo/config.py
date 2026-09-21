@@ -34,6 +34,20 @@ class Politica:
     penalidad_fecha_distinta: float = 12.0
     penalidad_nacionalidad_distinta: float = 6.0
 
+    # Tipos de designado que no se cotejan por nombre contra un cliente que es
+    # persona humana. Un cliente puede ser una persona o una sociedad, nunca un
+    # buque ni una aeronave, asi que "Natalia Benitez" contra el buque NATALIA
+    # es ruido garantizado. La restriccion es solo para el cotejo por nombre: si
+    # coincide un documento, la coincidencia vale igual, porque un identificador
+    # repetido no se explica por homonimia.
+    #
+    # Medido contra OFAC y ONU al 19/09/2026 con tres semillas del set de
+    # evaluacion: la falsa alerta baja de 81% a 62% y el recall no se mueve en
+    # ninguna, ni en los casos dificiles. Queda el riesgo de un cliente que sea
+    # una naviera mal cargada como persona en el padron, que es un error de
+    # carga encima de una homonimia.
+    tipos_solo_no_persona: frozenset[str] = frozenset({"BUQUE", "AERONAVE"})
+
     # Listas cuya coincidencia escala el caso sin pasar por scoring.
     listas_criticas: frozenset[str] = frozenset({"OFAC_SDN", "ONU_CONSOLIDADA"})
 
