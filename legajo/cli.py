@@ -15,7 +15,9 @@ from .beneficiario import resolver
 from .config import (
     POLITICA_POR_DEFECTO, Politica, parametros_con_listas, umbral_reporte_vigente,
 )
+from .circuito import Corrida, a_consola, correr
 from .congelamiento import obligaciones
+from .exportacion import escribir
 from .fuentes.base import Padron
 from .fuentes.descarga import actualizar
 from .fuentes.ofac import ParserOFAC, incorporar_alias
@@ -149,179 +151,106 @@ def comando_screening(args: argparse.Namespace) -> int:
 
 
 def comando_circuito(args: argparse.Namespace) -> int:
-    """Etapa 1 + Etapa 2 encadenadas."""
+    """Etapas 1 a 4, con la planilla como salida."""
     preparado = _preparar(args)
     if preparado is None:
         return 2
     padron, clientes = preparado
 
+    corrida = _correr_con_args(args, padron, clientes)
+
+    # El expediente se escribe recien ahora, con la evidencia de las cuatro etapas.
+    ruta = exportar(corrida.screening, corrida.casos, args.salida,
+                    corrida.politica.umbral_probable)
+    agregar_hojas_etapa2(ruta, corrida.resoluciones, corrida.evaluaciones, corrida.casos)
+    agregar_hoja_alertas(ruta, corrida.alertas, corrida.casos,
+                         corrida.evaluaciones, corrida.perfiles)
+    agregar_hojas_etapa4(ruta, corrida.congelamientos, corrida.exposicion)
+
+    _resumen(corrida)
+    print(f"\nInforme: {ruta}")
+    return 0
+
+
+def _correr_con_args(args: argparse.Namespace, padron, clientes) -> Corrida:
+    """Traduce los argumentos de la linea de comandos a una corrida."""
     politica = Politica(
         umbral_revision=args.umbral,
         umbral_probable=POLITICA_POR_DEFECTO.umbral_probable,
     )
-    casos = [Caso(caso_id=f"C{i:05d}", cliente=c) for i, c in enumerate(clientes, 1)]
-
-    # --- Etapa 1 ---
-    print(f"\n[1/4] Screening: {len(clientes)} cliente(s) contra {len(padron)} designado(s)")
-    resultado = screenear(casos, padron, politica, actor=args.actor)
-    print(f"      {len(resultado.coincidencias)} coincidencia(s), "
-          f"{sum(1 for c in casos if c.estado is Estado.ESCALADO)} escalado(s)")
-
-    por_cliente: dict[str, list] = {}
-    for c in resultado.coincidencias:
-        por_cliente.setdefault(c.cliente_id, []).append(c)
-
-    # --- Etapa 2 ---
-    print("\n[2/4] Beneficiario final y scoring EBR")
-
-    estructura = leer_estructura(args.societaria, clientes) if args.societaria else None
-    resoluciones = {}
-    if estructura is not None:
-        for cliente in clientes:
-            if cliente.tipo == "PERSONA":
-                continue
-            resoluciones[cliente.cliente_id] = resolver(estructura, cliente.cliente_id)
-        print(f"      {len(resoluciones)} estructura(s) analizada(s)")
-
-    registro_pep = leer_peps(args.peps) if args.peps else None
-    if registro_pep is not None:
-        vencidas = registro_pep.vencidas()
-        print(f"      {len(registro_pep)} declaracion(es) de PEP", end="")
-        print(f", {len(vencidas)} vencida(s) por el plazo de 2 anios" if vencidas else "")
-
-    evaluaciones = evaluar_casos(
-        casos, resoluciones, por_cliente,
-        registro_pep=registro_pep,
-        umbral_probable=politica.umbral_probable,
-        matriz=MATRIZ_POR_DEFECTO,
+    return correr(
+        padron, clientes,
+        politica=politica,
+        societaria=getattr(args, "societaria", None),
+        peps=getattr(args, "peps", None),
+        operaciones=getattr(args, "operaciones", None),
+        perfiles=getattr(args, "perfiles", None),
+        umbral_reporte=getattr(args, "umbral_reporte", None),
         actor=args.actor,
+        avisar=a_consola,
     )
 
-    # --- Etapa 3 ---
-    alertas: dict[str, list] = {}
-    perfiles: dict[str, object] = {}
 
-    if args.operaciones:
-        print("\n[3/4] Monitoreo transaccional")
-        operatorias = agrupar(leer_operaciones(args.operaciones))
-        perfiles = leer_perfiles(args.perfiles) if args.perfiles else {}
-
-        parametros = parametros_con_listas(umbral_reporte=args.umbral_reporte)
-        if parametros.umbral_reporte <= 0:
-            print("      aviso: sin umbral de reporte, la regla de fraccionamiento no corre",
-                  file=sys.stderr)
-        else:
-            origen = "parametro" if args.umbral_reporte else "40 SMVM, Res. 78/2025"
-            print(f"      umbral de reporte: ${parametros.umbral_reporte:,.0f} ({origen})")
-
-        alertas = monitorear(operatorias, perfiles, parametros)
-        total_ops = sum(o.cantidad for o in operatorias.values())
-        print(f"      {total_ops} operacion(es) de {len(operatorias)} cliente(s), "
-              f"{len(perfiles)} perfil(es) declarado(s)")
-
-        for r in reglas_inactivas():
-            print(f"      regla apagada: {r.codigo}", file=sys.stderr)
-
-        por_caso = {c.cliente.cliente_id: c for c in casos}
-        for cliente_id, lista in alertas.items():
-            caso = por_caso.get(cliente_id)
-            if caso is None:
-                continue
-            for a in lista:
-                caso.registrar(
-                    args.actor, "ALERTA_MONITOREO",
-                    tipo=a.codigo, severidad=a.severidad,
-                    descripcion=a.descripcion, metodologia=a.metodologia,
-                    monto=round(a.monto_involucrado, 2),
-                    vence=a.vence.isoformat(),
-                )
-            # Una alerta reabre el legajo cerrado: la debida diligencia
-            # continuada alcanza a todos los clientes, no solo a los de
-            # riesgo alto.
-            if caso.estado in (Estado.CERRADO, Estado.SCORING):
-                origen = caso.estado.value
-                caso.transicionar(
-                    Estado.ANALISIS, args.actor,
-                    f"{len(lista)} alerta(s) de monitoreo"
-                    + (" (reapertura del legajo)" if origen == "CERRADO" else ""),
-                )
-
-    # --- Etapa 4 ---
-    nombres = {c.cliente.cliente_id: c.cliente.nombre for c in casos}
-    congelamientos = obligaciones(
-        resultado.coincidencias, nombres, politica.umbral_probable
-    )
-
-    if congelamientos:
-        print(f"\n[4/4] Congelamiento administrativo")
-        print(f"      {len(congelamientos)} obligacion(es), reporte dentro de 24hs")
-        for c in congelamientos:
-            caso = por_caso.get(c.cliente_id) if args.operaciones else None
-            print(f"      {c.cliente_id}  {c.resumen()}")
-
-    por_cliente_caso = {c.cliente.cliente_id: c for c in casos}
-    for c in congelamientos:
-        caso = por_cliente_caso.get(c.cliente_id)
-        if caso is None:
-            continue
-        caso.registrar(
-            args.actor, "CONGELAMIENTO_REQUERIDO",
-            regimen=c.regimen.value, lista=c.lista, designado=c.designado,
-            norma=c.norma, plazo="24 horas",
-            reserva="prohibido informar al cliente",
-        )
-
-    sin_perfil = [cid for cid, lista in alertas.items()
-                  if any(a.codigo == "SIN_PERFIL" for a in lista)]
-    sin_bf = [cid for cid, r in resoluciones.items() if not r.identificado]
-    exposicion = estimar(alertas, congelamientos, nombres, sin_perfil, sin_bf)
-
-    # El expediente se escribe recien ahora, con la evidencia de las cuatro etapas.
-    ruta = exportar(resultado, casos, args.salida, politica.umbral_probable)
-    agregar_hojas_etapa2(ruta, resoluciones, evaluaciones, casos)
-    agregar_hoja_alertas(ruta, alertas, casos, evaluaciones, perfiles)
-    agregar_hojas_etapa4(ruta, congelamientos, exposicion)
-
+def _resumen(corrida: Corrida) -> None:
+    """Imprime el resumen de la corrida. Solo lee, no calcula nada."""
     conteo = {"ALTO": 0, "MEDIO": 0, "BAJO": 0}
-    for ev in evaluaciones.values():
+    for ev in corrida.evaluaciones.values():
         conteo[ev.nivel] += 1
 
     print("\n  Distribucion de riesgo")
     for nivel in ("ALTO", "MEDIO", "BAJO"):
         print(f"    {nivel:8} {conteo[nivel]:3}")
-    print(f"    {'escalado':8} {sum(1 for c in casos if c.estado is Estado.ESCALADO):3}"
+    escalados = sum(1 for c in corrida.casos if c.estado is Estado.ESCALADO)
+    print(f"    {'escalado':8} {escalados:3}"
           "   (no scoreados: coincidencia en lista critica)")
 
-    altos = [(cid, ev) for cid, ev in evaluaciones.items() if ev.nivel == "ALTO"]
+    altos = [(cid, ev) for cid, ev in corrida.evaluaciones.items() if ev.nivel == "ALTO"]
     if altos:
-        nombres = {c.cliente.cliente_id: c.cliente.nombre for c in casos}
+        nombres = corrida.nombres
         print("\n  Diligencia reforzada:")
         for cid, ev in sorted(altos, key=lambda kv: -kv[1].puntaje):
             motivo = ", ".join(ev.elevadores) or f"{ev.puntaje} pts"
             print(f"    {cid}  {nombres.get(cid, ''):28} {motivo}")
 
-    if alertas:
+    if corrida.alertas:
         from collections import Counter
-        conteo = Counter(a.codigo for lista in alertas.values() for a in lista)
-        criticas = sum(1 for lista in alertas.values() for a in lista if a.severidad == "ALTA")
+        conteo = Counter(a.codigo for lista in corrida.alertas.values() for a in lista)
+        criticas = sum(1 for lista in corrida.alertas.values()
+                       for a in lista if a.severidad == "ALTA")
         print(f"\n  Alertas de monitoreo: {sum(conteo.values())} "
-              f"sobre {len(alertas)} cliente(s), {criticas} de severidad alta")
+              f"sobre {len(corrida.alertas)} cliente(s), {criticas} de severidad alta")
         for codigo, n in conteo.most_common():
             print(f"    {codigo:28} {n:3}")
 
-        vencidas = [a for lista in alertas.values() for a in lista if a.vencida]
+        vencidas = [a for lista in corrida.alertas.values() for a in lista if a.vencida]
         if vencidas:
             print(f"\n  ATENCION: {len(vencidas)} alerta(s) con el plazo de reporte "
                   f"ya vencido")
             print("  El tope de 90 dias corre desde la operacion, no desde la deteccion.")
 
-    if exposicion.cargos:
+    exposicion = corrida.exposicion
+    if exposicion is not None and exposicion.cargos:
         print(f"\n  Exposicion sancionatoria estimada: ${exposicion.total:,.0f}")
         print(f"    por falta de reporte      ${exposicion.por_falta_de_reporte:>16,.0f}")
         print(f"    por otros incumplimientos ${exposicion.por_incumplimientos:>16,.0f}")
         print("    (estimacion, no calculo de multa: la fija la UIF en sumario)")
 
-    print(f"\nInforme: {ruta}")
+
+def comando_exportar(args: argparse.Namespace) -> int:
+    """Misma corrida que `circuito`, pero la salida es el JSON del visor."""
+    preparado = _preparar(args)
+    if preparado is None:
+        return 2
+    padron, clientes = preparado
+
+    corrida = _correr_con_args(args, padron, clientes)
+    _resumen(corrida)
+
+    variable = "DEMO_DATOS" if getattr(args, "demo", False) else "DATOS"
+    ruta, gemelo = escribir(corrida, args.salida, variable)
+    print(f"\nDatos del visor: {ruta}")
+    print(f"                  {gemelo.name}  (para abrir el visor sin servidor)")
+    print(f"\nAbri visor/index.html con doble clic.")
     return 0
 
 
@@ -531,6 +460,21 @@ def main(argv: list[str] | None = None) -> int:
     act.add_argument("--incluir-opcionales", action="store_true",
                      help="bajar tambien las listas no obligatorias para Argentina")
     act.set_defaults(func=comando_actualizar)
+
+    exp = sub.add_parser("exportar",
+                         help="etapas 1 a 4, con el visor web como salida")
+    comunes(exp)
+    exp.add_argument("--societaria", help="CSV o XLSX con el grafo societario")
+    exp.add_argument("--peps", help="CSV de declaraciones juradas de condicion PEP")
+    exp.add_argument("--operaciones", help="CSV o XLSX con la operatoria de los clientes")
+    exp.add_argument("--perfiles", help="CSV o XLSX con los perfiles transaccionales")
+    exp.add_argument("--umbral-reporte", type=float, default=None,
+                     help="umbral de reporte en pesos; por defecto, 40 SMVM")
+    exp.add_argument("--salida", default="visor/datos.json")
+    exp.add_argument("--demo", action="store_true",
+                     help="escribe el juego de demostracion que se publica, "
+                          "en vez del export de trabajo")
+    exp.set_defaults(func=comando_exportar)
 
     evl = sub.add_parser("evaluar",
                          help="recall y falsas alertas del screening contra casos etiquetados")

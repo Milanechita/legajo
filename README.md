@@ -113,6 +113,85 @@ Sale así:
 
 ---
 
+## Visor web
+
+El circuito termina en una planilla de diez hojas, que es lo que se le
+muestra a una inspección. Para explorar un caso, una planilla es incómoda: no
+deja ver de un vistazo que el cliente escalado, la sociedad intermedia y el
+designado de la lista son el mismo vínculo.
+
+El visor es eso. Tres vistas sobre la misma corrida, sin instalar nada.
+
+![Grafo de vínculos del visor](docs/visor-vinculos.png)
+
+**Vínculos.** Clientes, sociedades intermedias, beneficiarios finales,
+designados, contrapartes y jurisdicciones de riesgo en un grafo. Las aristas
+llevan el porcentaje de participación, el score de la coincidencia o el monto
+operado. Clic en una entidad abre sus propiedades, doble clic resalta su
+entorno. Los histogramas de la derecha filtran el grafo, y la línea de tiempo
+de abajo apaga los clientes sin actividad en el mes elegido.
+
+![Ficha del cliente](docs/visor-ficha.png)
+
+**Ficha del cliente.** La nota del caso arriba, después identificación,
+desglose del puntaje factor por factor, coincidencias, congelamiento con sus
+pasos, cadena de beneficiario final, alertas con su plazo y el expediente
+completo en orden cronológico.
+
+La nota la redacta el exportador a partir de lo que ya calculó el circuito.
+Describe y no concluye: termina en lo que tiene que decidir una persona y
+nunca en una decisión. El sistema no convierte una inusualidad en una
+sospecha, y hay una prueba que lo exige.
+
+![Vista de eventos](docs/visor-eventos.png)
+
+**Eventos.** El expediente de todos los clientes en una tabla, con filtros
+facetados a la izquierda que llevan su conteo. El conteo se calcula sobre lo
+que pasa las otras facetas, así que ningún valor muestra doce y devuelve cero
+al tildarlo.
+
+### Cómo se genera
+
+```bash
+python -m legajo exportar   --padron ejemplos/clientes.csv --listas ejemplos/listas   --societaria ejemplos/estructura.csv --peps ejemplos/peps.csv   --operaciones ejemplos/operaciones.csv --perfiles ejemplos/perfiles.csv   --salida visor/datos.json
+```
+
+Después se abre `visor/index.html` con doble clic. También está el botón
+**ABRIR VISOR** en la interfaz de escritorio, que corre el mismo comando.
+
+### Lo que el visor no hace
+
+No calcula riesgo, no aplica umbrales y no deriva plazos. Lee un JSON que ya
+viene resuelto. Es la misma regla por la que la interfaz de escritorio llama
+a `cli.main`: si la lógica viviera duplicada del lado del navegador, en la
+segunda corrección el visor y la planilla empezarían a dar resultados
+distintos, y la que se le muestra a una inspección es la planilla.
+
+`exportar` reusa el mismo `circuito.correr` que `circuito`. Cuando extraje
+esa función comparé la salida de los dos comandos línea por línea contra la
+versión anterior para confirmar que no había cambiado nada.
+
+### Detalles que costaron
+
+**Sin build y sin CDN.** HTML, CSS y JavaScript planos. La única biblioteca
+es Cytoscape.js, copiada en `visor/vendor/` con su licencia MIT. Sin npm, sin
+bundler y sin nada que se baje en tiempo de ejecución.
+
+**El doble clic.** Un navegador que abre un archivo local está en `file://`, y
+ahí `fetch` de otro archivo local queda bloqueado por CORS. Por eso el
+exportador escribe también un `.js` que asigna una variable global y se carga
+con una etiqueta `script`, que no tiene esa restricción. Los dos archivos se
+escriben juntos, así que no pueden quedar desfasados.
+
+**La demo y el export no son el mismo archivo.** `demo.js` sale de
+`ejemplos/`, es ficticio y se publica. `datos.js` es la corrida propia y está
+en el `.gitignore`, porque en un repo público un export con clientes reales
+es exactamente el accidente que no se puede permitir. El visor prefiere
+`datos.js` y cae en `demo.js`, y cuando está mostrando la demo lo dice en el
+encabezado.
+
+---
+
 ## Interfaz de escritorio
 
 Para quien no quiere tocar la terminal hay una ventana con selectores de

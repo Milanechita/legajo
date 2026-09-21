@@ -82,6 +82,10 @@ proyecto.
 | El índice descarta trabajo, no coincidencias | Hay una prueba que corre las dos búsquedas y exige el mismo resultado |
 | Un buque no se coteja contra un cliente persona | Un cliente es persona o sociedad, nunca un barco. Baja la falsa alerta de 81% a 61% sin mover el recall en tres semillas |
 | El filtro por tipo estricto está descartado | Medido: se lleva un tercio del recall. Pierde unipersonales, tipos mal cargados y buques homónimos de su naviera |
+| El visor solo lee, no calcula | Si tuviera lógica del dominio, el visor y la planilla divergen. La que ve una inspección es la planilla |
+| `exportar` y `circuito` comparten `circuito.correr` | Dos copias del encadenado de etapas se despegan en la segunda corrección |
+| El visor no tiene build ni CDN | Tiene que abrirse con doble clic y andar offline. Cytoscape va copiado en `visor/vendor/` |
+| La demo y el export son archivos distintos | `demo.js` es ficticio y se publica. `datos.js` puede tener clientes reales y está ignorado |
 | La interfaz es oscura y monoespaciada | Se mira varias horas seguidas. El contraste alto cansa menos que una planilla blanca |
 | La interfaz llama a `cli.main` | Si duplicara lógica, las dos versiones divergen y nadie se entera |
 
@@ -90,7 +94,7 @@ proyecto.
 ## Comandos
 
 ```bash
-python -m pytest tests/ -q          # 212 pruebas, tardan menos de un segundo
+python -m pytest tests/ -q          # 228 pruebas, tardan alrededor de un segundo
 
 python -m legajo evaluar --listas <dir> --dificiles evaluacion/casos_dificiles.csv
                                    # recall y falsas alertas, ~1 min con 20 nucleos
@@ -100,6 +104,9 @@ python -m legajo circuito \
   --societaria ejemplos/estructura.csv --peps ejemplos/peps.csv \
   --operaciones ejemplos/operaciones.csv --perfiles ejemplos/perfiles.csv \
   --salida /tmp/informe.xlsx
+
+python -m legajo exportar --salida visor/datos.json  # + los mismos args que circuito
+                                   # arma el JSON del visor, y abri visor/index.html
 
 python legajo_gui.py               # interfaz de escritorio
 build.bat                          # arma dist\legajo.exe (corre las pruebas antes)
@@ -112,7 +119,7 @@ justificar por qué no alcanza con la biblioteca estándar.
 
 ## Estado y pendientes
 
-**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 212 pruebas, informe de diez hojas, interfaz
+**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 228 pruebas, informe de diez hojas, visor web, interfaz
 de escritorio y empaquetado.
 
 **Probado en Windows 11 el 20/09/2026:**
@@ -134,13 +141,18 @@ de escritorio y empaquetado.
    `PESO_COBERTURA_CORTA` de 0.60 a 0.45 la lleva a 50%, pero cuesta recall:
    pierde `entidad_sin_ultimo_token` en dos de tres semillas. Medido, no
    aplicado. Hay que discutirlo, porque toca la calibración.
-2. **Demo que se vea sin clonar.** Un reclutador de compliance no va a correr
-   `python -m legajo`.
+2. **Publicar el visor en GitHub Pages.** Ya está hecho el visor y el juego
+   de demostración (`visor/demo.js`). Falta prender Pages desde la raíz del
+   repo, y queda en `milanechita.github.io/legajo/visor/`.
 3. **Triangulación de fondos** entre cuentas vinculadas. Necesita el grafo de
    contrapartes.
 4. **Reportes sistemáticos** RTE, RTI y SROM. Los datos ya están.
 5. **Recalcular el riesgo** con el resultado del monitoreo. Hoy el borrador de
    ROS solo marca la inconsistencia.
+
+**Referencias visuales:** `referencias/` tiene capturas de plataformas de
+terceros usadas como referencia de diseño. Está en el `.gitignore` y no se
+publica. El producto se llama legajo y no usa marcas ajenas en ningún lado.
 
 **Lo que NO hay que hacer:** refactorizar `io_planilla.py` aunque esté
 creciendo mal. Nadie lo ve y funciona.

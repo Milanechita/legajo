@@ -9,3 +9,8 @@ venv/
 *.xlsx
 !ejemplos/**/*.xlsx
 .legajo_gui.json
+
+# Capturas de terceros usadas como referencia visual. No se publican.
+referencias/
+visor/datos.json
+visor/datos.js

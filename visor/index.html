@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>legajo · visor de casos PLA/FT</title>
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+
+<header class="barra">
+  <div class="marca">
+    <span class="logo">legajo</span>
+    <span class="lema">visor de casos PLA/FT</span>
+  </div>
+
+  <nav class="vistas" id="vistas">
+    <button class="vista activa" data-vista="vinculos">Vínculos</button>
+    <button class="vista" data-vista="ficha">Ficha del cliente</button>
+    <button class="vista" data-vista="eventos">Eventos</button>
+  </nav>
+
+  <div class="cifras" id="cifras"></div>
+</header>
+
+<!-- ===================== VÍNCULOS ===================== -->
+<main class="pantalla activa" id="pantalla-vinculos">
+  <div class="columna-izq">
+    <div class="herramientas">
+      <div class="grupo-botones" id="disposiciones">
+        <button class="chip activo" data-layout="cose">Orgánica</button>
+        <button class="chip" data-layout="concentric">Concéntrica</button>
+        <button class="chip" data-layout="breadthfirst">Jerárquica</button>
+      </div>
+      <label class="interruptor">
+        <input type="checkbox" id="solo-criticos">
+        <span>Solo casos críticos</span>
+      </label>
+      <input type="search" id="buscar-nodo" class="buscador" placeholder="Buscar entidad...">
+      <button class="chip" id="reencuadrar">Reencuadrar</button>
+      <span class="contador" id="contador-grafo"></span>
+    </div>
+
+    <div id="grafo"></div>
+
+    <div class="leyenda" id="leyenda"></div>
+
+    <section class="linea-tiempo">
+      <div class="titulo-seccion">
+        <span>Línea de tiempo</span>
+        <span class="tenue" id="rango-tiempo"></span>
+      </div>
+      <div id="tiempo"></div>
+    </section>
+  </div>
+
+  <aside class="columna-der">
+    <section class="bloque" id="seleccion">
+      <div class="titulo-seccion"><span>Selección</span></div>
+      <div class="vacio">Hacé clic en una entidad del grafo para ver sus
+        propiedades. Doble clic expande sus vínculos.</div>
+    </section>
+
+    <section class="bloque">
+      <div class="titulo-seccion">
+        <span>Histogramas</span>
+        <button class="enlace" id="limpiar-filtros">limpiar</button>
+      </div>
+      <div id="histogramas"></div>
+    </section>
+  </aside>
+</main>
+
+<!-- ===================== FICHA ===================== -->
+<main class="pantalla" id="pantalla-ficha">
+  <aside class="columna-lista">
+    <div class="herramientas vertical">
+      <input type="search" id="buscar-cliente" class="buscador ancho"
+             placeholder="Buscar cliente...">
+      <div class="grupo-botones" id="filtro-nivel">
+        <button class="chip activo" data-nivel="">Todos</button>
+        <button class="chip" data-nivel="ALTO">Alto</button>
+        <button class="chip" data-nivel="MEDIO">Medio</button>
+        <button class="chip" data-nivel="BAJO">Bajo</button>
+        <button class="chip" data-nivel="SIN_SCORE">Escalados</button>
+      </div>
+    </div>
+    <div id="lista-clientes"></div>
+  </aside>
+  <div class="columna-ficha" id="detalle-cliente"></div>
+</main>
+
+<!-- ===================== EVENTOS ===================== -->
+<main class="pantalla" id="pantalla-eventos">
+  <aside class="columna-facetas">
+    <div class="titulo-seccion">
+      <span>Filtros</span>
+      <button class="enlace" id="limpiar-facetas">limpiar</button>
+    </div>
+    <div id="facetas"></div>
+  </aside>
+  <div class="columna-eventos">
+    <section class="bloque sin-borde">
+      <div class="titulo-seccion">
+        <span>Eventos en el tiempo</span>
+        <span class="tenue" id="conteo-eventos"></span>
+      </div>
+      <div id="histograma-eventos"></div>
+    </section>
+    <div class="tabla-envoltorio">
+      <table class="densa" id="tabla-eventos">
+        <thead>
+          <tr>
+            <th data-orden="momento" class="orden-asc">Momento</th>
+            <th data-orden="cliente">Cliente</th>
+            <th data-orden="accion">Acción</th>
+            <th data-orden="nivel">Riesgo</th>
+            <th>Detalle</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<div class="sin-datos" id="sin-datos" hidden>
+  <div class="tarjeta-error">
+    <h2>No hay datos cargados</h2>
+    <p>Generá <code>visor/datos.js</code> con el comando:</p>
+    <pre>python -m legajo exportar \
+  --padron ejemplos/clientes.csv \
+  --listas ejemplos/listas \
+  --societaria ejemplos/estructura.csv \
+  --peps ejemplos/peps.csv \
+  --operaciones ejemplos/operaciones.csv \
+  --perfiles ejemplos/perfiles.csv \
+  --salida visor/datos.json</pre>
+  </div>
+</div>
+
+<script src="vendor/cytoscape.min.js"></script>
+<!-- Los datos se cargan con etiquetas script y no con fetch, porque el visor
+     tiene que abrirse con doble clic y en file:// el navegador bloquea fetch
+     de archivos locales.
+
+     demo.js va primero y es el juego de ejemplo que se publica. datos.js va
+     despues y es el export de la corrida propia, que no se commitea porque
+     puede tener clientes reales. El que existe gana, y si esta el propio
+     tapa a la demo. Los dos onerror estan para que la falta de un archivo no
+     tire un error en la consola. -->
+<script src="demo.js" onerror="void 0"></script>
+<script src="datos.js" onerror="void 0"></script>
+<script src="app.js"></script>
+</body>
+</html>

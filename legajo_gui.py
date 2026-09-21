@@ -143,6 +143,7 @@ class Aplicacion(tk.Tk):
         self.cola: queue.Queue[str] = queue.Queue()
         self.corriendo = False
         self.ultimo_informe: Path | None = None
+        self.visor_pendiente: Path | None = None
         self.inicio: float | None = None
         self.duracion: int | None = None
         self.lineas = 0
@@ -375,6 +376,11 @@ class Aplicacion(tk.Tk):
                                     state="disabled")
         self.btn_abrir.pack(side="right")
 
+        self.btn_visor = ttk.Button(acciones, text="ABRIR VISOR", width=15,
+                                    style="Principal.TButton",
+                                    command=self._abrir_visor)
+        self.btn_visor.pack(side="right", padx=(0, 8))
+
         # --- consola ---
         self._regla(raiz, 8, "salida")
         consola = ttk.Frame(raiz, style="Borde.TFrame", padding=1)
@@ -434,7 +440,7 @@ class Aplicacion(tk.Tk):
         self.inicio = time.monotonic()
         self.duracion = None
         self.lineas = 0
-        for boton in (self.btn_circuito, self.btn_ros, self.btn_listas):
+        for boton in (self.btn_circuito, self.btn_ros, self.btn_listas, self.btn_visor):
             boton.configure(state="disabled")
         self._senal(AMBAR, etiqueta.upper() + " EN CURSO")
         self._limpiar_log()
@@ -554,16 +560,74 @@ class Aplicacion(tk.Tk):
         self.corriendo = False
         if self.inicio is not None:
             self.duracion = int(time.monotonic() - self.inicio)
-        for boton in (self.btn_circuito, self.btn_ros, self.btn_listas):
+        for boton in (self.btn_circuito, self.btn_ros, self.btn_listas, self.btn_visor):
             boton.configure(state="normal")
 
         if codigo == 0:
             self._senal(VERDE, "TERMINADO SIN ERRORES")
             if self.ultimo_informe and self.ultimo_informe.exists():
                 self.btn_abrir.configure(state="normal")
+            if self.visor_pendiente is not None:
+                pagina = self.visor_pendiente
+                self.visor_pendiente = None
+                if pagina.exists():
+                    try:
+                        self._abrir_en_el_sistema(str(pagina))
+                    except Exception as e:
+                        messagebox.showerror("No se pudo abrir el visor", str(e))
+                else:
+                    messagebox.showerror(
+                        "Falta el visor",
+                        f"No encuentro {pagina}.")
         else:
             self._senal(ROJO, f"TERMINÓ CON CÓDIGO {codigo}")
+            self.visor_pendiente = None
         self._guardar_config()
+
+    def _abrir_visor(self):
+        """Corre `exportar` y abre el visor en el navegador.
+
+        Arma el mismo comando que la terminal y lo manda por cli.main, igual
+        que el resto de los botones. El visor se abre solo cuando el comando
+        termino bien: mostrar un visor con datos de la corrida anterior es
+        peor que no mostrar nada.
+        """
+        faltan = [n for n, c in (("padrón", self.padron),
+                                 ("carpeta de listas", self.listas))
+                  if not c.get()]
+        if faltan:
+            messagebox.showwarning(
+                "Faltan datos",
+                "Hay que completar:\n\n  " + "\n  ".join(faltan))
+            return
+
+        destino = Path(__file__).resolve().parent / "visor" / "datos.json"
+        argv = ["exportar",
+                "--padron", self.padron.get(),
+                "--listas", self.listas.get(),
+                "--salida", str(destino)]
+        for bandera, campo in (("--societaria", self.societaria),
+                               ("--peps", self.peps),
+                               ("--operaciones", self.operaciones),
+                               ("--perfiles", self.perfiles)):
+            if campo.get():
+                argv += [bandera, campo.get()]
+        if self.umbral.get():
+            argv += ["--umbral-reporte", self.umbral.get().replace(".", "")]
+
+        self.visor_pendiente = destino.parent / "index.html"
+        self._lanzar(argv, "Exportación al visor")
+
+    def _abrir_en_el_sistema(self, ruta: str) -> None:
+        if sys.platform.startswith("win"):
+            import os
+            os.startfile(ruta)  # noqa: S606
+        elif sys.platform == "darwin":
+            import subprocess
+            subprocess.Popen(["open", ruta])
+        else:
+            import subprocess
+            subprocess.Popen(["xdg-open", ruta])
 
     def _abrir_informe(self):
         if not self.ultimo_informe or not self.ultimo_informe.exists():
