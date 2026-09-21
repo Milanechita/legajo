@@ -114,11 +114,15 @@ justificar por qué no alcanza con la biblioteca estándar.
 **Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 212 pruebas, informe de diez hojas, interfaz
 de escritorio y empaquetado.
 
-**Sin probar todavía:**
+**Probado en Windows 11 el 20/09/2026:**
 
-- La ventana de tkinter nunca se ejecutó. Se escribió en un contenedor Linux
-  sin tkinter, así que el layout no se vio nunca.
-- El `.exe`. PyInstaller en Windows tiene manías que solo aparecen ahí.
+- La ventana de tkinter corre. El layout tenía el `minsize` mal: a 780x640 los
+  cuatro botones de acción quedaban abajo del borde. Corregido a 780x760, que
+  es el alto real del formulario medido widget por widget.
+- El `.exe` se arma con `build.bat` y arranca. Son 13,4 MB y PyInstaller lo
+  hace en modo onefile, así que el proceso padre es el bootloader y la ventana
+  la abre un proceso hijo con el mismo nombre. Buscar la ventana en el padre no
+  la encuentra.
 
 **Pendientes ordenados por valor:**
 

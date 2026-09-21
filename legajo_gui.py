@@ -85,7 +85,11 @@ class Aplicacion(tk.Tk):
         super().__init__()
         self.title(TITULO)
         self.geometry("880x760")
-        self.minsize(780, 640)
+        # El alto minimo es el que necesita el formulario entero, medido widget
+        # por widget: a 740 se corta la barra de estado y a 640 quedan afuera
+        # los cuatro botones de accion. Una ventana que se puede achicar hasta
+        # esconder "Correr circuito" es una ventana rota.
+        self.minsize(780, 760)
         self.configure(bg=FONDO)
 
         self.cola: queue.Queue[str] = queue.Queue()
