@@ -3,8 +3,14 @@
 Herramienta de análisis PLA/FT para el portfolio de Tiago, orientado a puestos
 de Analista PLA/FT y Compliance en Argentina.
 
-El proyecto está terminado en sus cinco etapas. Lo que se hace ahora es
-mejorarlo, no construirlo.
+Las cinco etapas originales están terminadas. Ahora el proyecto se está
+reorientando: el screening contra listas internacionales baja de protagonismo
+y la pregunta central pasa a ser si la capacidad económica documentada del
+cliente justifica lo que opera. El plan está en [ROADMAP.md](ROADMAP.md) y se
+frena al terminar cada ítem para revisión.
+
+El screening no se elimina. Sigue siendo obligatorio para todo cliente por la
+Res. UIF 207/2025 art. 1.
 
 ---
 
@@ -72,6 +78,10 @@ proyecto.
 
 | Decisión | Por qué |
 |---|---|
+| El padrón es lo declarado, lo verificado va aparte | Una fila de padrón es una declaración. Así "actividad declarada contra inscripta" sale de comparar y no necesita regla propia |
+| Las constataciones son append-only | Una corrección es una constatación nueva que tapa a la anterior, nunca un borrado. Sin eso no se puede mostrar qué se verificó y cuándo |
+| `campo` de Constatación es enumeración cerrada | Hay una prueba que exige que cada valor exista en `Cliente`. Un renombre rompe la prueba y no el análisis en silencio |
+| COMPLETA no se mezcla con DISCREPA | Un campo que el cliente nunca declaró no contradice nada. Juntarlos infla las discrepancias con ruido |
 | El expediente es append-only | Es el producto. Sin traza no hay nada que mostrarle a una inspección |
 | Se calibra para recall, no precisión | Un falso negativo es incumplimiento del Cap. IV. Un falso positivo cuesta una hora |
 | El umbral del 10% va a la suma de caminos | Arista por arista permite armar estructuras que lo esquivan |
@@ -94,7 +104,7 @@ proyecto.
 ## Comandos
 
 ```bash
-python -m pytest tests/ -q          # 228 pruebas, tardan alrededor de un segundo
+python -m pytest tests/ -q          # 251 pruebas, tardan alrededor de un segundo
 
 python -m legajo evaluar --listas <dir> --dificiles evaluacion/casos_dificiles.csv
                                    # recall y falsas alertas, ~1 min con 20 nucleos
@@ -119,7 +129,7 @@ justificar por qué no alcanza con la biblioteca estándar.
 
 ## Estado y pendientes
 
-**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 228 pruebas, informe de diez hojas, visor web, interfaz
+**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 251 pruebas, informe de diez hojas, visor web, interfaz
 de escritorio y empaquetado.
 
 **Probado en Windows 11 el 20/09/2026:**
@@ -134,7 +144,10 @@ de escritorio y empaquetado.
   la abre un proceso hijo con el mismo nombre. Buscar la ventana en el padre no
   la encuentra.
 
-**Pendientes ordenados por valor:**
+**En curso:** Fase 1 del roadmap. Terminado el ítem 1.1 (procedencia), en
+`legajo/procedencia.py`. Sujeto obligado por defecto: BANCO, Res. UIF 14/2023.
+
+**Pendientes del proyecto viejo, ordenados por valor:**
 
 1. **El ruido que queda.** La falsa alerta está en 61%, y las que sobran son
    contra entidades (90% de las entidades argentinas limpias alertan). Bajar
