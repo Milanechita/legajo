@@ -42,13 +42,13 @@ Todo con expediente auditable y una sola dependencia externa.
 
 ## Por qué existe
 
-Los avisos de Analista PLA/FT en Argentina piden siempre lo mismo. Cotejar
-clientes contra listas de sanciones, identificar al beneficiario final,
-scorear el riesgo, monitorear las operaciones y preparar el ROS.
+Cotejar clientes contra listas de sanciones, identificar al beneficiario
+final, scorear el riesgo, monitorear las operaciones y preparar el ROS son los
+pasos que exige el régimen preventivo argentino a un sujeto obligado.
 
-Casi todos esos pasos se resuelven con un Excel a mano o con un software caro
-que nadie termina de entender. Este proyecto los codifica de punta a punta y
-deja documentado por qué cada decisión está donde está.
+Casi todos se resuelven con un Excel a mano o con un software caro que nadie
+termina de entender. Este proyecto los codifica de punta a punta y deja
+documentado por qué cada decisión está donde está.
 
 Lo que **no** hace: emitir reportes. Eso se carga en el SRO+ de la UIF y
 necesita la conclusión de una persona. Más abajo está el detalle.
@@ -332,7 +332,8 @@ ninguna otra lista del mundo.
 ## Las decisiones que importan
 
 Hay muchas decisiones chicas comentadas en el código. Estas son las que
-cambian el resultado.
+cambian el resultado. La tabla completa, con las treinta y su fundamento,
+está en [docs/decisiones.md](docs/decisiones.md).
 
 ### El expediente es el producto
 
@@ -514,10 +515,10 @@ distinguir una alerta bien resuelta de una que nadie miró.
 
 ---
 
-## Lo que encontré midiendo
+## Lo que apareció midiendo
 
-Las dos cosas de abajo no aparecieron leyendo el código. Aparecieron corriendo
-benchmarks y preguntándome por qué los números no cerraban.
+Las dos cosas de abajo no aparecieron leyendo el código. Aparecieron
+corriendo benchmarks, cuando los números no cerraban.
 
 ### El matcher medía media evidencia
 
@@ -563,8 +564,8 @@ Mezclarlos perdería coincidencias. Un cliente que coincide por pasaporte con
 un designado de nombre completamente distinto es un hit válido, y un índice
 construido sobre nombres lo descartaría sin dejar rastro.
 
-Probé exigir dos trigramas compartidos, tres y más. Todos filtran mejor y
-pierden coincidencias:
+Exigir dos trigramas compartidos, tres y más filtra mejor en todos los casos
+y pierde coincidencias:
 
 | mínimo | selectividad | recall |
 |--------|--------------|--------|
@@ -577,26 +578,25 @@ cosas distintas, y no hay umbral que los haga equivalentes.
 
 Entre filtrar mejor y no perder nada, en screening gana no perder nada.
 
-### Y el error que cometí
+### Lo que el profile desmintió
 
-Me fui derecho al índice porque era el problema interesante. El profile decía
-otra cosa:
+El índice parecía el problema interesante. El profile decía otra cosa:
 
 ```
 jaro          43%   ← 3.194.640 llamadas para 60 clientes
 normalizar    15%   ← los mismos 2.681 nombres, una vez por cliente
 ```
 
-Estaba normalizando el padrón entero de nuevo para cada cliente. Trabajo
-repetido que no cambia nunca.
+Se normalizaba el padrón entero de nuevo para cada cliente. Trabajo repetido
+que no cambia nunca.
 
 ```
 antes     118 min   proyectado a 50.000 clientes
 después    64 min   con recall del 100%
 ```
 
-Esos minutos son contra un padrón de 2.681 nombres, que es lo que tenía a
-mano cuando lo medí. Con las listas completas de OFAC y ONU el padrón son
+Esos minutos son contra un padrón de 2.681 nombres, que era el disponible en
+esa medición. Con las listas completas de OFAC y ONU el padrón son
 20.404 designados y 43.381 nombres contando alias, y el costo real es otro:
 
 ```
@@ -633,11 +633,12 @@ umbral   recall   precisión   falsa alerta
 El recall aguanta. Los 18 casos difíciles positivos salen detectados y en el
 sintético se pierden 2 de 360, los dos del tipo "sin nombre del medio".
 
-Cómo leer estos números: el recall es contra el modelo de error que armé yo,
-no contra el mundo. Las perturbaciones las elegí yo y un padrón real puede
-fallar de maneras que no imaginé. Los negativos tampoco son una muestra de un
-padrón de clientes real. Sirven para comparar cambios entre sí, no para
-prometer una tasa de alertas.
+Cómo leer estos números: son contra un modelo de error y no contra el mundo.
+Las perturbaciones del conjunto sintético las decidió quien lo armó, así que el
+recall mide cuánto resiste el matcher los errores que alguien imaginó, y un
+padrón real puede fallar de maneras que ese conjunto no contempla. Los
+negativos tampoco son una muestra de un padrón de clientes real. Sirven para
+comparar una versión contra otra, no para prometer una tasa de alertas.
 
 ### Un cliente nunca es un barco
 
@@ -671,9 +672,9 @@ Era un artefacto del conjunto. Los positivos salían de perturbar designados
 conservando su tipo, así que no había un solo caso que cruzara tipos y
 cualquier filtro por tipo daba gratis.
 
-Agregué tres tipos de caso que sí cruzan: el cliente que es la unipersonal de
-una persona designada, el tipo mal cargado en el padrón, y el buque que se
-llama igual que la empresa que lo opera. Con esos casos adentro:
+Se agregaron tres tipos de caso que sí cruzan: el cliente que es la
+unipersonal de una persona designada, el tipo mal cargado en el padrón, y el
+buque que se llama igual que la empresa que lo opera. Con esos casos adentro:
 
 ```
                               recall   falsa alerta
@@ -683,7 +684,7 @@ tipo estricto compatible       66,1%          35,0%
 
 Un tercio del recall. Pierde las 40 unipersonales, los 40 tipos mal cargados
 y los 40 buques. El filtro estricto está descartado, y la medición que lo
-descartó solo existió porque primero arreglé la vara de medir.
+descartó solo existió porque primero se arregló la vara de medir.
 
 ---
 
@@ -781,9 +782,9 @@ certificado. Las decisiones las toma una persona.
   máquina
 - **No recalcula el riesgo** con el resultado del monitoreo. Marca la
   inconsistencia y ahí queda
-- **No hay set de casos etiquetados**, así que "calibrado para recall" sigue
-  siendo una afirmación sin métrica de precisión y recall detrás. Es el
-  agujero más grande que le queda
+- **El set de casos etiquetados es sintético.** Hay métricas de precisión y
+  recall, pero salen de un conjunto generado y de 26 casos escritos a mano, no
+  de un padrón real etiquetado por analistas
 
 ---
 

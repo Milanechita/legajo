@@ -15,3 +15,6 @@ referencias/
 visor/datos.json
 visor/datos.js
 cache/
+
+# Notas de trabajo, no se publican.
+CLAUDE.md
