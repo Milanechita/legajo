@@ -41,6 +41,11 @@ resultado. Esta es la tabla completa, para consulta.
 | La demo y el export son archivos distintos | `demo.js` es ficticio y se publica. `datos.js` puede tener clientes reales y está ignorado |
 | La interfaz es oscura y monoespaciada | Se mira varias horas seguidas. El contraste alto cansa menos que una planilla blanca |
 | La interfaz llama a `cli.main` | Si duplicara lógica, las dos versiones divergen y nadie se entera |
+| La capacidad documentada son dos cifras y no una | El flujo anual explica un nivel sostenido de operatoria. La venta de un inmueble explica el pico de un mes. Con una sola cifra, esa venta infla la capacidad para siempre o no explica nada |
+| Un balance no suma a la capacidad del socio | Lo que factura una sociedad no es ingreso de quien la integra. Sumarlo sobreestima por un orden de magnitud justo en el caso que más importa, el que usa una sociedad para justificar movimientos propios |
+| El descarte dice primero qué acredita el documento | Un balance prueba que la sociedad existe y operó por ese monto. Descartarlo en silencio le haría creer al analista que el papel no vale nada |
+| La confiabilidad viaja con la cifra, no la multiplica | Un coeficiente por tipo de documento sería un número inventado, y además no arregla la titularidad: multiplicar el balance por 0,5 sigue dando plata que el socio no tiene |
+| La capacidad no se corta por antigüedad | Cortar inventaría el umbral exacto que el proyecto evita, y dejaría en cero a un cliente con documentación vieja igual que a uno sin documentación. La fecha de cada respaldo se expone para que el corte, si hace falta, sea explícito |
 | `io_planilla.py` no se refactoriza por ahora | Funciona y no es superficie visible. Crece mal, pero reescribir lo que no rompe nada tiene costo y no tiene beneficio |
 
 El screening contra listas no se elimina aunque baje de protagonismo: sigue

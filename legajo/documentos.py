@@ -86,6 +86,11 @@ class Ficha:
     vigencia_meses: int | None = None
     # Solo para personas humanas, solo para juridicas, o para las dos.
     aplica_a: str = "AMBOS"          # PERSONA | ENTIDAD | AMBOS
+    # Si el monto que declara sale, en los hechos, de lo que dijo el cliente.
+    # Una certificacion de ingresos la firma un contador, pero en buena parte
+    # sobre lo que el cliente le conto. Computa igual, y el analista tiene que
+    # poder ver cuanto de la capacidad se apoya en documentos de esta clase.
+    derivado_de_declarado: bool = False
 
 
 CATALOGO: dict[TipoDocumento, Ficha] = {
@@ -99,7 +104,8 @@ CATALOGO: dict[TipoDocumento, Ficha] = {
               "Recibo de haberes", acredita_capacidad=True, aplica_a="PERSONA"),
         Ficha(TipoDocumento.CERTIFICACION_INGRESOS, Materia.ECONOMICA,
               "Certificacion de ingresos por contador publico",
-              acredita_capacidad=True, aplica_a="PERSONA"),
+              acredita_capacidad=True, aplica_a="PERSONA",
+              derivado_de_declarado=True),
         Ficha(TipoDocumento.RECIBO_JUBILACION, Materia.ECONOMICA,
               "Recibo de haberes previsionales", acredita_capacidad=True,
               aplica_a="PERSONA"),
