@@ -1,0 +1,27 @@
+{
+ "status": 200,
+ "results": {
+  "identificacion": 27990000021,
+  "denominacion": "GONZALEZ MARIA ELENA",
+  "periodos": [
+   {
+    "periodo": "202608",
+    "entidades": [
+     {
+      "entidad": "BANCO DE PRUEBA S.A.",
+      "situacion": 1,
+      "fechaSit1": "2024-01-31",
+      "monto": 120.0,
+      "diasAtrasoPago": 0,
+      "refinanciaciones": false,
+      "recategorizacionOblig": false,
+      "situacionJuridica": false,
+      "irrecDisposicionTecnica": false,
+      "enRevision": false,
+      "procesoJud": false
+     }
+    ]
+   }
+  ]
+ }
+}

@@ -1,0 +1,43 @@
+{
+ "status": 200,
+ "results": {
+  "identificacion": 20990000019,
+  "denominacion": "PEREZ JUAN IGNACIO",
+  "causales": [
+   {
+    "causal": "SIN FONDOS SUFICIENTES DISPONIBLES EN CUENTA",
+    "entidades": [
+     {
+      "entidad": "BANCO DE PRUEBA S.A.",
+      "detalle": [
+       {
+        "nroCheque": "00012345",
+        "fechaRechazo": "2026-06-14",
+        "monto": 1850000.0,
+        "fechaPago": null,
+        "fechaPagoMulta": null,
+        "estadoMulta": "IMPAGA",
+        "ctaPersonal": true,
+        "denomJuridica": "",
+        "enRevision": false,
+        "procesoJud": false
+       },
+       {
+        "nroCheque": "00012399",
+        "fechaRechazo": "2026-07-02",
+        "monto": 640000.0,
+        "fechaPago": "2026-07-20",
+        "fechaPagoMulta": "2026-07-22",
+        "estadoMulta": "PAGADA",
+        "ctaPersonal": true,
+        "denomJuridica": "",
+        "enRevision": false,
+        "procesoJud": false
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ }
+}

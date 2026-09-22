@@ -14,3 +14,4 @@ venv/
 referencias/
 visor/datos.json
 visor/datos.js
+cache/

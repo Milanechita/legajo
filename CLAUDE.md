@@ -84,6 +84,8 @@ proyecto.
 | COMPLETA no se mezcla con DISCREPA | Un campo que el cliente nunca declaró no contradice nada. Juntarlos infla las discrepancias con ruido |
 | Los identificadores del ejemplo van fuera del rango asignado | El repo es público. Un CUIT real en una demo de lavado asocia a una persona de verdad con una alerta. Hay una prueba que lo exige |
 | Un documento no verificado contra la norma no es opcional | `SIN_VERIFICAR` manda al analista a leer la norma. `OPCIONAL` le diría que ya se miró, y nadie lo miró |
+| La API del BCRA nunca se llama desde las pruebas | La descarga entra por parámetro y las pruebas inyectan fixtures. Una suite que depende de un tercero falla los días que el tercero está caído |
+| Todo lo que se baja queda con su fecha de consulta | "Está en situación 3" no dice nada sin saber de cuándo es el dato |
 | El expediente es append-only | Es el producto. Sin traza no hay nada que mostrarle a una inspección |
 | Se calibra para recall, no precisión | Un falso negativo es incumplimiento del Cap. IV. Un falso positivo cuesta una hora |
 | El umbral del 10% va a la suma de caminos | Arista por arista permite armar estructuras que lo esquivan |
@@ -106,7 +108,7 @@ proyecto.
 ## Comandos
 
 ```bash
-python -m pytest tests/ -q          # 286 pruebas, tardan alrededor de un segundo
+python -m pytest tests/ -q          # 302 pruebas, tardan alrededor de un segundo
 
 python -m legajo evaluar --listas <dir> --dificiles evaluacion/casos_dificiles.csv
                                    # recall y falsas alertas, ~1 min con 20 nucleos
@@ -116,6 +118,9 @@ python -m legajo circuito \
   --societaria ejemplos/estructura.csv --peps ejemplos/peps.csv \
   --operaciones ejemplos/operaciones.csv --perfiles ejemplos/perfiles.csv \
   --salida /tmp/informe.xlsx
+
+python -m legajo bcra --padron ejemplos/clientes_ar.csv --cache cache/bcra
+                                   # Central de Deudores, ~2s por cliente
 
 python -m legajo exportar --salida visor/datos.json  # + los mismos args que circuito
                                    # arma el JSON del visor, y abri visor/index.html
@@ -131,7 +136,7 @@ justificar por qué no alcanza con la biblioteca estándar.
 
 ## Estado y pendientes
 
-**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 286 pruebas, informe de diez hojas, visor web, interfaz
+**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 302 pruebas, informe de diez hojas, visor web, interfaz
 de escritorio y empaquetado.
 
 **Probado en Windows 11 el 20/09/2026:**
@@ -151,9 +156,14 @@ obligado), 1.3 (validación de CUIT) y 1.5 (padrón argentino de ejemplo, en
 `ejemplos/clientes_ar.csv`). Sujeto obligado por defecto: BANCO, Res. UIF
 14/2023.
 
+Terminado también 2.1: Central de Deudores del BCRA, en
+`legajo/fuentes/bcra.py`, con caché local y el subcomando `bcra`.
+
 **Frenado por falta de datos normativos:** 1.4 necesita el texto vigente de la
-Res. 78/2023 para ALYC, y 3.3 las escalas de monotributo. No se completan de
-memoria. 2.2 y 2.3 esperan definición antes de implementar.
+Res. 78/2023 para ALYC, 3.3 las escalas de monotributo, 4.1 el Decreto
+253/2018 y 4.2 el Anexo de la Res. 70/2011. No se completan de memoria. 2.2 ya
+está investigado y espera decisión, 2.3 necesita saber qué formato tiene el
+archivo que baja el analista.
 
 **Pendientes del proyecto viejo, ordenados por valor:**
 
@@ -192,6 +202,7 @@ vieja, los resultados están mal y el programa no avisa.
 | Listas GAFI | plenario 19 junio 2026 | tres veces al año |
 | ARCA no cooperantes | Decreto 398/2026 | por decreto |
 | RePET | export de septiembre 2026 | manual, no hay API |
+| Límite de tasa del BCRA | 10 pedidos seguidos, medido 22/09/2026 | si cambia, ajustar `PAUSA_ENTRE_PEDIDOS` |
 
 Las listas reales no están en el repo. Se bajan con
 `python -m legajo actualizar-listas --listas <dir>` y pesan unos 9 MB.

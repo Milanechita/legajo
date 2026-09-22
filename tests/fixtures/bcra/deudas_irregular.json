@@ -1,0 +1,58 @@
+{
+ "status": 200,
+ "results": {
+  "identificacion": 20990000019,
+  "denominacion": "PEREZ JUAN IGNACIO",
+  "periodos": [
+   {
+    "periodo": "202608",
+    "entidades": [
+     {
+      "entidad": "BANCO DE PRUEBA S.A.",
+      "situacion": 3,
+      "fechaSit1": "2026-05-31",
+      "monto": 4820.5,
+      "diasAtrasoPago": 124,
+      "refinanciaciones": true,
+      "recategorizacionOblig": false,
+      "situacionJuridica": false,
+      "irrecDisposicionTecnica": false,
+      "enRevision": false,
+      "procesoJud": false
+     },
+     {
+      "entidad": "ENTIDAD NO FINANCIERA DE PRUEBA",
+      "situacion": 1,
+      "fechaSit1": "2026-08-31",
+      "monto": 310.0,
+      "diasAtrasoPago": 0,
+      "refinanciaciones": false,
+      "recategorizacionOblig": false,
+      "situacionJuridica": false,
+      "irrecDisposicionTecnica": false,
+      "enRevision": false,
+      "procesoJud": false
+     }
+    ]
+   },
+   {
+    "periodo": "202607",
+    "entidades": [
+     {
+      "entidad": "BANCO DE PRUEBA S.A.",
+      "situacion": 2,
+      "fechaSit1": "2026-05-31",
+      "monto": 4900.0,
+      "diasAtrasoPago": 94,
+      "refinanciaciones": false,
+      "recategorizacionOblig": false,
+      "situacionJuridica": false,
+      "irrecDisposicionTecnica": false,
+      "enRevision": false,
+      "procesoJud": false
+     }
+    ]
+   }
+  ]
+ }
+}

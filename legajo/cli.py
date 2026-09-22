@@ -18,6 +18,8 @@ from .config import (
 from .circuito import Corrida, a_consola, correr
 from .congelamiento import obligaciones
 from .exportacion import escribir
+from .fuentes import bcra
+
 from .fuentes.base import Padron
 from .fuentes.descarga import actualizar
 from .fuentes.ofac import ParserOFAC, incorporar_alias
@@ -29,7 +31,7 @@ from .io_planilla import (
     leer_operaciones, leer_padron, leer_peps, leer_perfiles,
 )
 from .matriz import MATRIZ_POR_DEFECTO
-from .modelo import Caso, Estado
+from .modelo import Caso, Estado, validar_cuit
 from .operaciones import agrupar
 from .ros import Resolucion, armar
 from .sanciones import estimar
@@ -254,6 +256,59 @@ def comando_exportar(args: argparse.Namespace) -> int:
     return 0
 
 
+def comando_bcra(args: argparse.Namespace) -> int:
+    """Consulta la Central de Deudores para todo el padron.
+
+    Es el unico comando que sale a internet aparte de actualizar-listas. Lo
+    que baja queda en cache con la fecha de consulta, asi que volver a
+    correrlo el mismo dia no vuelve a pedirle nada al BCRA.
+    """
+    clientes = leer_padron(args.padron)
+    if not clientes:
+        print(f"error: el padron {args.padron} no tiene registros validos",
+              file=sys.stderr)
+        return 2
+
+    print(f"Consultando el BCRA para {len(clientes)} cliente(s)")
+    print(f"Cache: {args.cache}  (vigencia {args.vigencia} dias)\n")
+
+    sin_cuit = irregulares = consultados = 0
+    filas = []
+
+    for cliente in clientes:
+        cuit = next((d.numero for d in cliente.documentos
+                     if d.tipo.upper() == "CUIT"), "")
+        if not validar_cuit(cuit, cliente.tipo):
+            sin_cuit += 1
+            continue
+        try:
+            informe = bcra.consultar(cuit, args.cache, vigencia_dias=args.vigencia)
+        except bcra.ErrorBCRA as e:
+            print(f"  {cliente.cliente_id}  fallo: {e}", file=sys.stderr)
+            continue
+
+        consultados += 1
+        if informe.sin_datos:
+            continue
+        if informe.irregular:
+            irregulares += 1
+        filas.append((cliente, informe))
+
+    for cliente, informe in sorted(filas, key=lambda f: -f[1].peor_situacion):
+        marca = "  <-- irregular" if informe.irregular else ""
+        print(f"  {cliente.cliente_id}  {cliente.nombre[:34]:34} "
+              f"sit {informe.peor_situacion}  "
+              f"${informe.deuda_total:>12,.0f} mil  "
+              f"{len(informe.cheques)} cheque(s){marca}")
+
+    print(f"\n  consultados        {consultados:4}")
+    print(f"  con deuda          {len(filas):4}")
+    print(f"  situacion 3 o peor {irregulares:4}")
+    if sin_cuit:
+        print(f"  sin CUIT valido    {sin_cuit:4}   (no se pueden consultar)")
+    return 0
+
+
 def comando_ros(args: argparse.Namespace) -> int:
     """Arma los borradores de ROS desde el informe que el analista completo.
 
@@ -475,6 +530,15 @@ def main(argv: list[str] | None = None) -> int:
                      help="escribe el juego de demostracion que se publica, "
                           "en vez del export de trabajo")
     exp.set_defaults(func=comando_exportar)
+
+    bcr = sub.add_parser("bcra",
+                         help="consulta la Central de Deudores del BCRA")
+    bcr.add_argument("--padron", required=True, help="CSV o XLSX de clientes")
+    bcr.add_argument("--cache", default="cache/bcra",
+                     help="directorio de cache de las respuestas")
+    bcr.add_argument("--vigencia", type=int, default=30,
+                     help="dias que vale una respuesta cacheada")
+    bcr.set_defaults(func=comando_bcra)
 
     evl = sub.add_parser("evaluar",
                          help="recall y falsas alertas del screening contra casos etiquetados")
