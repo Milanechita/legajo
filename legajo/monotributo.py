@@ -3,11 +3,12 @@
 Igual que el SMVM: el valor va con la fecha al lado. Si la fecha esta vieja,
 los resultados estan mal y el programa no avisa solo.
 
-La tabla esta INCOMPLETA a proposito. Estan confirmadas A, B y K contra la
-fuente oficial y faltan C a J. Eso no es un detalle que se pueda ignorar: una
-categoria que no esta en la tabla no se puede evaluar, y el modulo lo dice en
-vez de devolver un cero que parezca un resultado. Completar de memoria las que
-faltan seria inventar el umbral que decide si un cliente excede su categoria.
+La tabla esta completa: las once categorias, A a K, verificadas contra la
+fuente oficial. Igual se conserva la maquinaria que distingue saber de no
+saber, porque en febrero de 2027 estos topes quedan viejos y alguien va a
+tener que cargar los nuevos. Una categoria que no este en la tabla no se puede
+evaluar, y el modulo lo dice en vez de devolver un cero que parezca un
+resultado.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from datetime import date
 # de abajo son viejos y hay que reemplazarlos.
 # ---------------------------------------------------------------------------
 
-FUENTE = "ARCA, escalas del Regimen Simplificado"
+FUENTE = "ARCA, afip.gob.ar/monotributo/categorias.asp"
 VIGENCIA_DESDE = date(2026, 8, 1)
 VIGENCIA_HASTA = date(2027, 1, 31)
 PROXIMA_ACTUALIZACION = date(2027, 2, 1)
@@ -32,7 +33,15 @@ CATEGORIAS: tuple[str, ...] = ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
 # Tope de ingresos brutos anuales por categoria. Solo las verificadas.
 TOPES_ANUALES: dict[str, float] = {
     "A": 12_009_410.45,
-    "B": 17_595_182.00,
+    "B": 17_595_182.74,
+    "C": 24_670_494.31,
+    "D": 30_628_651.43,
+    "E": 36_028_231.33,
+    "F": 45_151_659.41,
+    "G": 53_995_798.87,
+    "H": 81_924_660.37,
+    "I": 91_699_761.90,
+    "J": 105_012_519.20,
     "K": 126_610_838.75,
 }
 

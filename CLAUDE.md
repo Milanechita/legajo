@@ -89,6 +89,9 @@ proyecto.
 | La regla documental depende del sujeto obligado | Las DDJJ impositivas están **prohibidas** en banco (Res. 78/2025, sustituyó art. 37 de la 14/2023) y son **exigibles** en ALYC (Res. 78/2023 art. 33). Misma pregunta, respuesta opuesta |
 | La exigibilidad se declara por materia cuando la norma habla de materias | El art. 33 nombra economía, patrimonio, finanzas y tributos, no documentos. Enumerar documento por documento sería inventar una lista que la norma no escribe |
 | Una escala incompleta no responde como si estuviera completa | Faltan C a J del monotributo. Devolver cero o False se leería como "el cliente está en regla", que es lo contrario de lo que pasa |
+| Las reglas reciben el cliente, no solo la operatoria | Hay reglas que comparan contra lo declarado en el alta. Un segundo motor de reglas al lado del primero se despega en la tercera corrección |
+| La alerta de monotributo describe, no acusa | El volumen que ve el banco incluye transferencias entre cuentas propias y préstamos. No es facturación, así que el programa marca la inconsistencia y la conclusión la saca el analista |
+| Una ventana corta no se anualiza | Proyectar dos meses por seis da un número que no significa nada, y una alerta que no significa nada entrena al analista a ignorarlas |
 | El expediente es append-only | Es el producto. Sin traza no hay nada que mostrarle a una inspección |
 | Se calibra para recall, no precisión | Un falso negativo es incumplimiento del Cap. IV. Un falso positivo cuesta una hora |
 | El umbral del 10% va a la suma de caminos | Arista por arista permite armar estructuras que lo esquivan |
@@ -111,7 +114,7 @@ proyecto.
 ## Comandos
 
 ```bash
-python -m pytest tests/ -q          # 322 pruebas, tardan alrededor de un segundo
+python -m pytest tests/ -q          # 338 pruebas, tardan alrededor de un segundo
 
 python -m legajo evaluar --listas <dir> --dificiles evaluacion/casos_dificiles.csv
                                    # recall y falsas alertas, ~1 min con 20 nucleos
@@ -139,7 +142,7 @@ justificar por qué no alcanza con la biblioteca estándar.
 
 ## Estado y pendientes
 
-**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 322 pruebas, informe de diez hojas, visor web, interfaz
+**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 338 pruebas, informe de diez hojas, visor web, interfaz
 de escritorio y empaquetado.
 
 **Probado en Windows 11 el 20/09/2026:**
@@ -182,9 +185,12 @@ lo puede pedir). **Fase 1 completa.**
   calculaba eso para banco. Hay una prueba que exige que las dos sigan
   coincidiendo.
 
-**Frenado por falta de datos normativos:** 3.3 necesita las categorías C a J
-del monotributo (A, B y K ya están cargadas), 4.1 el Decreto 253/2018 y 4.2 el
-Anexo de la Res. 70/2011. No se completan de memoria. 2.2 ya está investigado
+Terminado 3.3: escalas completas A a K en `legajo/monotributo.py` y la regla
+`MONOTRIBUTO_EXCEDIDO` en `alertas.py`.
+
+**Frenado por falta de datos normativos:** 4.2 necesita el Anexo de la
+Res. 70/2011. Para 4.1 se acordó una aproximación por provincia, pendiente de
+arrancar. No se completan de memoria. 2.2 ya está investigado
 y espera decisión, 2.3 necesita saber qué formato tiene el archivo que baja el
 analista.
 
@@ -225,7 +231,7 @@ vieja, los resultados están mal y el programa no avisa.
 | Listas GAFI | plenario 19 junio 2026 | tres veces al año |
 | ARCA no cooperantes | Decreto 398/2026 | por decreto |
 | RePET | export de septiembre 2026 | manual, no hay API |
-| Escalas de monotributo | A, B y K, agosto 2026 a enero 2027 | próxima actualización febrero 2027. Faltan C a J |
+| Escalas de monotributo | A a K completas, vigencia 1/08/2026 | próxima actualización febrero 2027 |
 | Límite de tasa del BCRA | 10 pedidos seguidos, medido 22/09/2026 | si cambia, ajustar `PAUSA_ENTRE_PEDIDOS` |
 
 Las listas reales no están en el repo. Se bajan con

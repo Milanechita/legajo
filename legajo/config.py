@@ -166,6 +166,20 @@ class ParametrosMonitoreo:
     multiplo_redondo: float = 100_000.0
     proporcion_redondos: float = 0.70
 
+    # --- capacidad declarada contra operado ---
+    #
+    # Anualizar dos meses de operatoria y multiplicar por seis da un numero que
+    # no significa nada: un cliente que abrio la cuenta en noviembre y opero
+    # fuerte en diciembre quedaria excedido por el aguinaldo. Tres meses es el
+    # minimo para que la proyeccion tenga algo atras.
+    meses_minimos_para_anualizar: float = 3.0
+
+    # A partir de cuantas veces el tope la inconsistencia pasa de MEDIA a ALTA.
+    # Sin calibrar: sale de que duplicar el tope de la categoria es dificil de
+    # explicar por estacionalidad, y superarlo por poco no lo es. Hay que
+    # medirlo contra operatoria real y ajustarlo.
+    factor_monotributo_grave: float = 2.0
+
     # --- generales ---
     pais_local: str = "AR"
     minimo_operaciones_para_exigir_perfil: int = 3

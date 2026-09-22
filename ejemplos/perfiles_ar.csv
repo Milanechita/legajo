@@ -1,0 +1,33 @@
+cliente_id,monto_mensual,operaciones_mensuales,proporcion_efectivo,paises,origen_fondos,proposito
+AR001,1023659,5,0.10,Argentina,Sueldo,Cobros y pagos habituales
+AR002,913613,6,0.10,Argentina,Sueldo,Cobros y pagos habituales
+AR003,1382186,7,0.25,Argentina,Actividad independiente,Cobros y pagos habituales
+AR004,1191785,10,0.25,Argentina,Actividad independiente,Cobros y pagos habituales
+AR005,308135,9,0.25,Argentina,Actividad independiente,Cobros y pagos habituales
+AR006,2076593,10,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR007,4877227,5,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR008,820814,10,0.10,Argentina,Sueldo,Cobros y pagos habituales
+AR009,278394,8,0.10,Argentina,Sueldo,Cobros y pagos habituales
+AR010,842300,8,0.25,Argentina,Actividad independiente,Cobros y pagos habituales
+AR011,855759,8,0.10,Argentina,Sueldo,Cobros y pagos habituales
+AR012,5975830,7,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR013,7186911,8,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR014,5613123,7,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR015,6054438,8,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR016,5732133,7,0.25,Argentina,Actividad independiente,Cobros y pagos habituales
+AR017,918889,8,0.25,Argentina,Actividad independiente,Cobros y pagos habituales
+AR019,3005941,8,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR020,842306,9,0.25,Argentina,Actividad independiente,Cobros y pagos habituales
+AR022,366047,9,0.10,Argentina,Sueldo,Cobros y pagos habituales
+AR023,8671312,8,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR024,1394945,6,0.10,Argentina,Sueldo,Cobros y pagos habituales
+AR025,8106266,9,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR026,23822380,5,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR027,26711507,8,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR028,7656629,4,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR029,8915142,5,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR030,16538142,6,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR031,13979623,4,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR032,10546131,7,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR034,29149124,6,0.10,Argentina,Actividad comercial,Cobros y pagos habituales
+AR035,7635805,9,0.10,Argentina,Actividad comercial,Cobros y pagos habituales

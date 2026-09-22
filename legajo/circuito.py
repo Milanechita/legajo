@@ -150,7 +150,10 @@ def correr(
             origen = "parametro" if umbral_reporte else "40 SMVM, Res. 78/2025"
             decir(f"      umbral de reporte: ${parametros.umbral_reporte:,.0f} ({origen})")
 
-        alertas = monitorear(operatorias, tabla_perfiles, parametros)
+        # Los clientes van al monitoreo porque hay reglas que comparan la
+        # operatoria contra lo que el cliente declaro en el alta.
+        alertas = monitorear(operatorias, tabla_perfiles, parametros,
+                             clientes={c.cliente_id: c for c in clientes})
         total_ops = sum(o.cantidad for o in operatorias.values())
         decir(f"      {total_ops} operacion(es) de {len(operatorias)} cliente(s), "
               f"{len(tabla_perfiles)} perfil(es) declarado(s)")

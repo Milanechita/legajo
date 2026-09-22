@@ -24,7 +24,9 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Callable
 
+from . import monotributo
 from .config import ParametrosMonitoreo, PARAMETROS_POR_DEFECTO
+from .modelo import Cliente
 from .operaciones import Operacion, Operatoria, Perfil
 from .paises import iso, nombre as nombre_pais
 from .regimen import Regimen, regimen_de_alerta, vencimiento
@@ -147,7 +149,12 @@ class Regla:
     codigo: str
     descripcion: str
     severidad: str
-    evaluar: Callable[[Operatoria, Perfil | None, ParametrosMonitoreo], list[Alerta]]
+    evaluar: Callable[..., list[Alerta]]
+    # Las reglas reciben (operatoria, perfil, parametros, cliente). El cliente
+    # entro despues, cuando aparecieron las reglas que comparan la operatoria
+    # contra lo que el cliente declaro en el alta: categoria de monotributo,
+    # actividad, provincia. Va al final y con valor por defecto para que una
+    # regla que no lo necesita no tenga que nombrarlo.
     activa: bool = True
     motivo_inactiva: str = ""
 
@@ -156,7 +163,8 @@ class Regla:
 # Reglas
 # ---------------------------------------------------------------------------
 
-def _sin_perfil(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo):
+def _sin_perfil(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
+         cliente: Cliente | None = None):
     """Cliente que opera sin perfil transaccional declarado.
 
     No es una conducta del cliente sino una falta de control, y es de las
@@ -177,7 +185,8 @@ def _sin_perfil(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo):
     )]
 
 
-def _desvio_perfil(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo):
+def _desvio_perfil(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
+         cliente: Cliente | None = None):
     """Operatoria mensual por encima de lo declarado.
 
     Se evalua mes calendario por mes calendario y se reporta el peor. Un
@@ -210,7 +219,8 @@ def _desvio_perfil(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo
     )]
 
 
-def _fraccionamiento(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo):
+def _fraccionamiento(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
+         cliente: Cliente | None = None):
     """Operaciones sucesivas bajo el umbral de reporte que en conjunto lo superan.
 
     Dos condiciones hacen que esto sea fraccionamiento y no volumen alto.
@@ -266,7 +276,8 @@ def _fraccionamiento(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitor
     return alertas
 
 
-def _efectivo_desproporcionado(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo):
+def _efectivo_desproporcionado(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
+         cliente: Cliente | None = None):
     """Uso de efectivo por encima de lo esperado para la actividad."""
     if not op.total:
         return []
@@ -292,7 +303,8 @@ def _efectivo_desproporcionado(op: Operatoria, perfil: Perfil | None, p: Paramet
     )]
 
 
-def _jurisdiccion_no_declarada(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo):
+def _jurisdiccion_no_declarada(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
+         cliente: Cliente | None = None):
     """Contrapartes en paises que el cliente no declaro operar.
 
     Reusa la normalizacion y las listas de la etapa 2: si el pais ademas esta
@@ -326,7 +338,8 @@ def _jurisdiccion_no_declarada(op: Operatoria, perfil: Perfil | None, p: Paramet
     return alertas
 
 
-def _aceleracion(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo):
+def _aceleracion(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
+         cliente: Cliente | None = None):
     """Salto de volumen respecto del propio historial del cliente.
 
     Es independiente del perfil declarado: un cliente puede estar dentro de
@@ -364,7 +377,8 @@ def _aceleracion(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo):
     )]
 
 
-def _montos_redondos(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo):
+def _montos_redondos(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
+         cliente: Cliente | None = None):
     """Proporcion alta de importes exactos.
 
     Tipologia clasica: la operatoria genuina deja decimales, la armada usa
@@ -391,6 +405,66 @@ def _montos_redondos(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitor
     )]
 
 
+def _monotributo_excedido(op: Operatoria, perfil: Perfil | None,
+                          p: ParametrosMonitoreo,
+                          cliente: Cliente | None = None):
+    """Volumen operado anualizado por encima del tope de la categoria declarada.
+
+    Es la pregunta central del proyecto puesta sobre el caso mas simple que
+    hay: un monotributista declara una categoria, y esa categoria tiene un
+    tope de ingresos brutos anuales que fija ARCA.
+
+    Lo que se compara NO es ingreso contra tope. El volumen que ve el banco
+    incluye transferencias entre cuentas propias, prestamos, devoluciones y
+    plata que no es facturacion. Por eso la alerta describe una inconsistencia
+    entre lo declarado y lo operado, y no afirma que el cliente evadio: eso lo
+    resuelve el analista pidiendo la documentacion.
+
+    No dispara si faltan meses de operatoria. Anualizar una ventana corta
+    produce un numero que no significa nada, y una alerta que no significa
+    nada entrena al analista a ignorar las alertas.
+    """
+    if cliente is None:
+        return []
+    if (cliente.condicion_iva or "").strip().upper() != "MONOTRIBUTO":
+        return []
+
+    categoria = (cliente.categoria_monotributo or "").strip().upper()
+    tope = monotributo.tope_anual(categoria)
+    if tope is None:
+        # Categoria vacia o fuera de la tabla cargada. No se puede evaluar, y
+        # no evaluarla es distinto de darla por buena.
+        return []
+
+    if op.meses < p.meses_minimos_para_anualizar:
+        return []
+
+    anualizado = op.total / op.meses * 12
+    if anualizado <= tope:
+        return []
+
+    veces = anualizado / tope
+    grave = veces >= p.factor_monotributo_grave
+
+    return [Alerta(
+        cliente_id=op.cliente_id,
+        codigo="MONOTRIBUTO_EXCEDIDO",
+        severidad=ALTA if grave else MEDIA,
+        descripcion=(
+            f"categoria {categoria} declarada, tope ${tope:,.0f} anuales. "
+            f"Opero ${op.total:,.0f} en {op.meses:.1f} mes(es), que anualizado "
+            f"da ${anualizado:,.0f}, {veces:.1f} veces el tope"
+        ),
+        metodologia=(
+            f"volumen operado anualizado contra el tope de la categoria "
+            f"declarada, escala {monotributo.FUENTE} vigente desde "
+            f"{monotributo.VIGENCIA_DESDE.isoformat()}"
+        ),
+        operaciones=tuple(op.operaciones[:8]),
+        monto_involucrado=op.total,
+    )]
+
+
 # ---------------------------------------------------------------------------
 # Catalogo
 # ---------------------------------------------------------------------------
@@ -402,6 +476,9 @@ CATALOGO: tuple[Regla, ...] = (
     Regla("EFECTIVO_DESPROPORCIONADO", "uso de efectivo mayor al esperado", ALTA, _efectivo_desproporcionado),
     Regla("JURISDICCION_NO_DECLARADA", "contraparte en pais no declarado", MEDIA, _jurisdiccion_no_declarada),
     Regla("ACELERACION", "salto de volumen contra el propio historial", MEDIA, _aceleracion),
+    Regla("MONOTRIBUTO_EXCEDIDO",
+          "volumen anualizado por encima del tope de la categoria declarada",
+          MEDIA, _monotributo_excedido),
     Regla(
         "MONTOS_REDONDOS", "proporcion alta de importes exactos", BAJA, _montos_redondos,
         activa=False,
@@ -421,20 +498,26 @@ def monitorear(
     perfiles: dict[str, Perfil],
     parametros: ParametrosMonitoreo = PARAMETROS_POR_DEFECTO,
     catalogo: tuple[Regla, ...] = CATALOGO,
+    clientes: dict[str, Cliente] | None = None,
 ) -> dict[str, list[Alerta]]:
     """Corre el catalogo sobre cada operatoria.
 
     El motor no sabe que hace ninguna regla. Solo las recorre.
+
+    `clientes` es opcional. Sin el, las reglas que comparan contra lo declarado
+    en el alta no disparan, que es lo correcto: no tener el dato no es lo mismo
+    que tenerlo y que no cierre.
     """
     resultado: dict[str, list[Alerta]] = {}
 
     for cliente_id, operatoria in operatorias.items():
         perfil = perfiles.get(cliente_id)
+        cliente = (clientes or {}).get(cliente_id)
         alertas: list[Alerta] = []
         for regla in catalogo:
             if not regla.activa:
                 continue
-            alertas.extend(regla.evaluar(operatoria, perfil, parametros))
+            alertas.extend(regla.evaluar(operatoria, perfil, parametros, cliente))
         if alertas:
             alertas.sort(key=lambda a: (_ORDEN_SEVERIDAD[a.severidad], -a.monto_involucrado))
             resultado[cliente_id] = alertas
