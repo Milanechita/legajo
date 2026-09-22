@@ -108,7 +108,7 @@ proyecto.
 ## Comandos
 
 ```bash
-python -m pytest tests/ -q          # 302 pruebas, tardan alrededor de un segundo
+python -m pytest tests/ -q          # 305 pruebas, tardan alrededor de un segundo
 
 python -m legajo evaluar --listas <dir> --dificiles evaluacion/casos_dificiles.csv
                                    # recall y falsas alertas, ~1 min con 20 nucleos
@@ -136,7 +136,7 @@ justificar por qué no alcanza con la biblioteca estándar.
 
 ## Estado y pendientes
 
-**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 302 pruebas, informe de diez hojas, visor web, interfaz
+**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 305 pruebas, informe de diez hojas, visor web, interfaz
 de escritorio y empaquetado.
 
 **Probado en Windows 11 el 20/09/2026:**
