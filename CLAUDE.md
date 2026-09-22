@@ -86,6 +86,9 @@ proyecto.
 | Un documento no verificado contra la norma no es opcional | `SIN_VERIFICAR` manda al analista a leer la norma. `OPCIONAL` le diría que ya se miró, y nadie lo miró |
 | La API del BCRA nunca se llama desde las pruebas | La descarga entra por parámetro y las pruebas inyectan fixtures. Una suite que depende de un tercero falla los días que el tercero está caído |
 | Todo lo que se baja queda con su fecha de consulta | "Está en situación 3" no dice nada sin saber de cuándo es el dato |
+| La regla documental depende del sujeto obligado | Las DDJJ impositivas están **prohibidas** en banco (Res. 78/2025, sustituyó art. 37 de la 14/2023) y son **exigibles** en ALYC (Res. 78/2023 art. 33). Misma pregunta, respuesta opuesta |
+| La exigibilidad se declara por materia cuando la norma habla de materias | El art. 33 nombra economía, patrimonio, finanzas y tributos, no documentos. Enumerar documento por documento sería inventar una lista que la norma no escribe |
+| Una escala incompleta no responde como si estuviera completa | Faltan C a J del monotributo. Devolver cero o False se leería como "el cliente está en regla", que es lo contrario de lo que pasa |
 | El expediente es append-only | Es el producto. Sin traza no hay nada que mostrarle a una inspección |
 | Se calibra para recall, no precisión | Un falso negativo es incumplimiento del Cap. IV. Un falso positivo cuesta una hora |
 | El umbral del 10% va a la suma de caminos | Arista por arista permite armar estructuras que lo esquivan |
@@ -108,7 +111,7 @@ proyecto.
 ## Comandos
 
 ```bash
-python -m pytest tests/ -q          # 305 pruebas, tardan alrededor de un segundo
+python -m pytest tests/ -q          # 322 pruebas, tardan alrededor de un segundo
 
 python -m legajo evaluar --listas <dir> --dificiles evaluacion/casos_dificiles.csv
                                    # recall y falsas alertas, ~1 min con 20 nucleos
@@ -136,7 +139,7 @@ justificar por qué no alcanza con la biblioteca estándar.
 
 ## Estado y pendientes
 
-**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 305 pruebas, informe de diez hojas, visor web, interfaz
+**Terminado:** las cinco etapas, set de evaluación con recall y falsas alertas medidos, 322 pruebas, informe de diez hojas, visor web, interfaz
 de escritorio y empaquetado.
 
 **Probado en Windows 11 el 20/09/2026:**
@@ -159,11 +162,31 @@ obligado), 1.3 (validación de CUIT) y 1.5 (padrón argentino de ejemplo, en
 Terminado también 2.1: Central de Deudores del BCRA, en
 `legajo/fuentes/bcra.py`, con caché local y el subcomando `bcra`.
 
-**Frenado por falta de datos normativos:** 1.4 necesita el texto vigente de la
-Res. 78/2023 para ALYC, 3.3 las escalas de monotributo, 4.1 el Decreto
-253/2018 y 4.2 el Anexo de la Res. 70/2011. No se completan de memoria. 2.2 ya
-está investigado y espera decisión, 2.3 necesita saber qué formato tiene el
-archivo que baja el analista.
+Terminado 1.4: catálogo de documentos en `legajo/documentos.py` (qué es cada
+documento) y reglas por sujeto obligado en `legajo/sujeto_obligado.py` (quién
+lo puede pedir). **Fase 1 completa.**
+
+**Pendientes que dejó la lectura de la Res. UIF 78/2023:**
+
+- **Plazos de ALYC, art. 36.** `regimen.py` hoy solo tiene los de banco:
+  lavado 24hs desde la conclusión con tope de 90 días, terrorismo 24hs sin
+  tope. Para ALYC son otros: lavado **15 días** desde que se concluye con tope
+  de **150 días** desde la operación, terrorismo **48 horas** desde la
+  operación. No está implementado y banco sigue siendo el default. Si se
+  activa ALYC como sujeto obligado, `regimen.py` necesita sus propios plazos
+  antes de que el cálculo de vencimientos sirva para nada.
+- **SAS de mayor riesgo, art. 26 inc. g).** Para ALYC las SAS son de mayor
+  riesgo por definición normativa. Es dato para el ítem 4.4.
+- **Art. 30 verificado:** el legajo se actualiza cada 1 año en riesgo alto, 3
+  en medio y 5 en bajo. Coincide con `matriz.MESES_HASTA_REVISION`, que ya
+  calculaba eso para banco. Hay una prueba que exige que las dos sigan
+  coincidiendo.
+
+**Frenado por falta de datos normativos:** 3.3 necesita las categorías C a J
+del monotributo (A, B y K ya están cargadas), 4.1 el Decreto 253/2018 y 4.2 el
+Anexo de la Res. 70/2011. No se completan de memoria. 2.2 ya está investigado
+y espera decisión, 2.3 necesita saber qué formato tiene el archivo que baja el
+analista.
 
 **Pendientes del proyecto viejo, ordenados por valor:**
 
@@ -202,6 +225,7 @@ vieja, los resultados están mal y el programa no avisa.
 | Listas GAFI | plenario 19 junio 2026 | tres veces al año |
 | ARCA no cooperantes | Decreto 398/2026 | por decreto |
 | RePET | export de septiembre 2026 | manual, no hay API |
+| Escalas de monotributo | A, B y K, agosto 2026 a enero 2027 | próxima actualización febrero 2027. Faltan C a J |
 | Límite de tasa del BCRA | 10 pedidos seguidos, medido 22/09/2026 | si cambia, ajustar `PAUSA_ENTRE_PEDIDOS` |
 
 Las listas reales no están en el repo. Se bajan con
