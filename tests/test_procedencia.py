@@ -230,3 +230,61 @@ def test_un_cliente_sin_constataciones_no_tiene_cotejos():
     legajo = LegajoCliente("CL001")
     assert legajo.cotejos(cliente()) == []
     assert legajo.cotejar(cliente(), Campo.NOMBRE) is None
+
+
+# --- antiguedad del respaldo ----------------------------------------------
+
+def test_un_respaldo_dice_a_cuando_corresponde_el_dato_y_no_solo_cuando_se_emitio():
+    # Es la misma distincion que Constatacion trae desde la Fase 1. Sin ella,
+    # Capacidad sumaria respaldos sin mirar de cuando son.
+    recibo = Respaldo("CL001", "RECIBO_SUELDO", emitido=date(2026, 9, 5),
+                      monto=900_000, periodicidad=Periodicidad.MENSUAL,
+                      periodo_desde=date(2026, 8, 1),
+                      periodo_hasta=date(2026, 8, 31))
+    assert recibo.fecha_dato == date(2026, 8, 31)
+    assert recibo.periodo_cargado
+
+
+def test_un_balance_reimpreso_no_rejuvenece_el_ejercicio_que_acredita():
+    # El caso que obliga a separar las dos fechas. El papel es de esta semana
+    # y el hecho economico es de hace tres anios. Medir por la emision lo haria
+    # pasar por actual.
+    balance = Respaldo("CL002", "BALANCE", emitido=date(2026, 9, 15),
+                       monto=180_000_000, periodicidad=Periodicidad.ANUAL,
+                       periodo_desde=date(2023, 1, 1),
+                       periodo_hasta=date(2023, 12, 31))
+    assert balance.fecha_dato == date(2023, 12, 31)
+    assert balance.antiguedad_en_dias(HOY) == 995
+
+    # Lo que importa de verdad: medida por la emision, la antiguedad daria
+    # seis dias. Son dos ordenes de magnitud de diferencia sobre el mismo
+    # documento, y de ahi sale si el monto puede sumar a la capacidad de hoy.
+    por_emision = (HOY - balance.emitido).days
+    assert por_emision == 6
+    assert balance.antiguedad_en_dias(HOY) > por_emision * 100
+
+
+def test_un_recibo_del_mes_esta_al_dia_y_uno_de_hace_tres_anios_no():
+    reciente = Respaldo("CL001", "RECIBO_SUELDO", emitido=date(2026, 9, 5),
+                        periodo_hasta=date(2026, 8, 31))
+    viejo = Respaldo("CL001", "RECIBO_SUELDO", emitido=date(2023, 9, 5),
+                     periodo_hasta=date(2023, 8, 31))
+    assert reciente.antiguedad_en_meses(HOY) < 2
+    assert viejo.antiguedad_en_meses(HOY) > 36
+
+
+def test_sin_periodo_cargado_la_antiguedad_sale_de_la_emision_y_se_sabe():
+    # Caer en la emision es una aproximacion. Lo que no se puede es no avisar
+    # que se esta aproximando.
+    suelto = Respaldo("CL001", "ESCRITURA", emitido=date(2024, 3, 10))
+    assert suelto.fecha_dato == date(2024, 3, 10)
+    assert not suelto.periodo_cargado
+
+
+def test_una_escritura_cubre_un_solo_dia():
+    venta = Respaldo("CL001", "ESCRITURA", emitido=date(2026, 5, 20),
+                     monto=200_000_000, periodicidad=Periodicidad.UNICA,
+                     periodo_desde=date(2026, 5, 18),
+                     periodo_hasta=date(2026, 5, 18))
+    assert venta.fecha_dato == date(2026, 5, 18)
+    assert venta.periodicidad.factor_anual is None

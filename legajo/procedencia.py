@@ -217,6 +217,18 @@ class Respaldo:
 
     `monto` sin `periodicidad` no sirve: un recibo de sueldo de $900.000 y un
     balance con ventas por $900.000 no acreditan lo mismo.
+
+    Van tres fechas y cada una contesta algo distinto:
+
+        periodo_desde/hasta   a que periodo economico corresponde el monto
+        emitido               cuando se produjo el papel
+        vence                 hasta cuando se lo acepta en el legajo
+
+    La que importa para la capacidad es el periodo, y por eso existe
+    `fecha_dato`, que es el equivalente al de Constatacion. Un balance del
+    ejercicio 2023 reimpreso la semana pasada tiene `emitido` de hace siete
+    dias y acredita un hecho economico de hace tres anios. Medir la antiguedad
+    por la emision lo haria pasar por actual, que es justamente la trampa.
     """
 
     cliente_id: str
@@ -224,9 +236,34 @@ class Respaldo:
     emitido: date
     monto: float = 0.0
     periodicidad: Periodicidad = Periodicidad.UNICA
-    periodo: str = ""           # "2026-08", "2025", ejercicio
+    # Periodo economico que cubre. Un recibo de agosto va del 1 al 31 de
+    # agosto, un balance cubre el ejercicio, y una escritura tiene desde y
+    # hasta iguales porque la venta paso un dia.
+    periodo_desde: date | None = None
+    periodo_hasta: date | None = None
     vence: date | None = None
     referencia: str = ""
+
+    @property
+    def fecha_dato(self) -> date:
+        """A cuando corresponde el hecho economico que acredita.
+
+        Cae en la emision solo cuando no se cargo el periodo. Es una
+        aproximacion y no lo mismo: para un documento reemitido, la emision
+        miente sobre la antiguedad del hecho.
+        """
+        return self.periodo_hasta or self.emitido
+
+    def antiguedad_en_dias(self, al: date | None = None) -> int:
+        return ((al or date.today()) - self.fecha_dato).days
+
+    def antiguedad_en_meses(self, al: date | None = None) -> float:
+        return self.antiguedad_en_dias(al) / 30.44
+
+    @property
+    def periodo_cargado(self) -> bool:
+        """Si se sabe a que periodo corresponde, o si hay que suponerlo."""
+        return self.periodo_hasta is not None
 
     def vigente(self, al: date | None = None) -> bool:
         """Un documento sin vencimiento declarado se considera vigente.
