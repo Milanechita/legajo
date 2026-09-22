@@ -174,10 +174,18 @@ class ParametrosMonitoreo:
     # minimo para que la proyeccion tenga algo atras.
     meses_minimos_para_anualizar: float = 3.0
 
+    # =====================================================================
+    # SIN CALIBRAR: revisar antes de usar en produccion.
+    #
     # A partir de cuantas veces el tope la inconsistencia pasa de MEDIA a ALTA.
-    # Sin calibrar: sale de que duplicar el tope de la categoria es dificil de
-    # explicar por estacionalidad, y superarlo por poco no lo es. Hay que
-    # medirlo contra operatoria real y ajustarlo.
+    # El 2.0 sale de razonar y no de medir: duplicar el tope de la categoria es
+    # dificil de explicar por estacionalidad y superarlo por poco no lo es.
+    # Nadie lo comparo todavia contra operatoria real.
+    #
+    # Es un corte que decide severidad ALTA, que es la primera que mira el
+    # analista. Si esta mal, o entierra casos graves entre los medios o llena
+    # de ALTA lo que no lo es. Se calibra en el item 7.1.
+    # =====================================================================
     factor_monotributo_grave: float = 2.0
 
     # --- generales ---

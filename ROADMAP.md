@@ -70,11 +70,27 @@ Se frena al terminar cada ítem para revisión.
 
 | | Ítem |
 |---|---|
-| 4.1 | Domicilio en zona de frontera o de seguridad (Decreto 253/2018) |
+| 4.1 | Domicilio en zona de frontera. **Aproximación por provincia**, ver nota |
 | 4.2 | Cliente sujeto obligado sin constancia de inscripción UIF (Anexo Res. 70/2011) |
 | 4.3 | Domicilio, teléfono o email compartido entre clientes |
 | 4.4 | Persona que integra cinco o más sociedades (Res. 70/2011 art. 11) |
 | 4.5 | Situación BCRA 3 o peor operando montos altos |
+
+**Nota sobre 4.1.** El Decreto 253/2018 no trae una lista de partidos: define
+la zona por descripción cartográfica (ríos, rutas, coordenadas), con un anexo
+distinto por provincia. Sacar de ahí una lista de partidos confiable exige
+transcribir el PDF oficial, que es un trabajo aparte.
+
+Se acordó una aproximación explícita a nivel provincia, con las dieciséis que
+limitan con otro país: Misiones, Corrientes, Entre Ríos, Chaco, Formosa,
+Salta, Jujuy, Catamarca, La Rioja, San Juan, Mendoza, Neuquén, Río Negro,
+Chubut, Santa Cruz y Tierra del Fuego.
+
+La señal se llama `ZONA_FRONTERA_PROVINCIA`. La precisión va en el nombre y no
+en una constante aparte, para que el código se explique solo si alguien lo
+lista sin mirar comentarios. Nunca se muestra como si fuera el dato exacto del
+decreto. La precisión a nivel partido queda pendiente hasta transcribir el
+anexo oficial.
 
 ## Fase 5 · Legajo
 
@@ -97,3 +113,16 @@ Se frena al terminar cada ítem para revisión.
 | | Ítem |
 |---|---|
 | 7.1 | Set de casos etiquetados con métricas de precisión y recall |
+
+**Casos que le faltan al set.** Los tres monotributistas de
+`ejemplos/operaciones_ar.csv` son todos "excede sistemático", que es el caso
+fácil. Faltan dos:
+
+- **Caso límite:** justo 1,05 veces el tope. Sirve para ver si el corte de
+  severidad y el mínimo de meses se comportan en el borde.
+- **Exceso puntual y explicable:** la venta de un bien, una sola vez, que
+  levanta el anualizado sin que haya actividad sostenida. Es el caso que el
+  modelo de capacidad tiene que saber distinguir de un exceso recurrente.
+
+También se calibra acá el `factor_monotributo_grave`, hoy marcado
+**SIN CALIBRAR: revisar antes de usar en producción**.

@@ -219,6 +219,19 @@ creciendo mal. Nadie lo ve y funciona.
 
 ---
 
+## Cortes sin calibrar
+
+**SIN CALIBRAR: revisar antes de usar en producción.**
+
+| Parámetro | Dónde | Qué decide |
+|---|---|---|
+| `factor_monotributo_grave` = 2.0 | `config.py` | Si `MONOTRIBUTO_EXCEDIDO` sale MEDIA o ALTA. Sale de razonar, no de medir. Nadie lo comparó contra operatoria real. Es la severidad que el analista mira primero: si está mal, entierra casos graves entre los medios o llena de ALTA lo que no lo es |
+
+Se calibran en el ítem 7.1. Hasta entonces el aviso va en el código, en el
+parámetro y en el lugar donde se usa.
+
+---
+
 ## Datos que hay que mantener al día
 
 Cada parámetro tiene su fecha escrita al lado en el código. Si la fecha está

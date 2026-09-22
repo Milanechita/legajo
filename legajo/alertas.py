@@ -444,6 +444,8 @@ def _monotributo_excedido(op: Operatoria, perfil: Perfil | None,
         return []
 
     veces = anualizado / tope
+    # SIN CALIBRAR: revisar antes de usar en produccion. El corte entre
+    # MEDIA y ALTA sale de razonar, no de medir. Ver config.py.
     grave = veces >= p.factor_monotributo_grave
 
     return [Alerta(
