@@ -47,7 +47,9 @@ hace tres anios no es lo mismo que uno sin documentacion, y con un corte los
 dos quedan en cero. Asi el analista ve la diferencia.
 
 =============================================================================
-PREGUNTA ABIERTA, para el item 3.2
+PENDIENTE DE POLITICA: revisar antes de usar en produccion.
+
+Pregunta abierta, para el item 3.2
 
 Cuando la regla compare `capacidad_anual` contra lo operado, hay que decidir
 si un respaldo de 2019 pesa igual que uno de este mes para esa comparacion
@@ -287,6 +289,12 @@ def calcular(cliente: Cliente, legajo: LegajoCliente | None) -> Capacidad:
 
     computados: list[Computo] = []
     descartados: list[Descarte] = []
+    # PENDIENTE DE POLITICA: revisar antes de usar en produccion.
+    # Aca entra todo respaldo sin filtrar por antiguedad, asi que uno de 2019
+    # pesa igual que uno de este mes. Es deliberado y esta explicado arriba: la
+    # fecha se expone en vez de aplicarse. Si el item 3.2 necesita ponderar,
+    # tiene que hacerlo con una politica explicita y no agregando un filtro
+    # silencioso en esta linea.
     for respaldo in legajo.respaldos:
         resultado = _clasificar(respaldo, cliente)
         (computados if isinstance(resultado, Computo) else descartados).append(resultado)

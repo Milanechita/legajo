@@ -187,6 +187,7 @@ def _correr_con_args(args: argparse.Namespace, padron, clientes) -> Corrida:
         peps=getattr(args, "peps", None),
         operaciones=getattr(args, "operaciones", None),
         perfiles=getattr(args, "perfiles", None),
+        respaldos=getattr(args, "respaldos", None),
         umbral_reporte=getattr(args, "umbral_reporte", None),
         actor=args.actor,
         avisar=a_consola,
@@ -491,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
     cir.add_argument("--peps", help="CSV de declaraciones juradas de condicion PEP")
     cir.add_argument("--operaciones", help="CSV o XLSX con la operatoria de los clientes")
     cir.add_argument("--perfiles", help="CSV o XLSX con los perfiles transaccionales")
+    cir.add_argument("--respaldos",
+                     help="CSV o XLSX con los documentos respaldatorios")
     cir.add_argument("--umbral-reporte", type=float, default=None,
                      help="umbral de reporte en pesos; por defecto, 40 SMVM segun "
                           "Res. UIF 78/2025")
@@ -523,6 +526,8 @@ def main(argv: list[str] | None = None) -> int:
     exp.add_argument("--peps", help="CSV de declaraciones juradas de condicion PEP")
     exp.add_argument("--operaciones", help="CSV o XLSX con la operatoria de los clientes")
     exp.add_argument("--perfiles", help="CSV o XLSX con los perfiles transaccionales")
+    exp.add_argument("--respaldos",
+                     help="CSV o XLSX con los documentos respaldatorios")
     exp.add_argument("--umbral-reporte", type=float, default=None,
                      help="umbral de reporte en pesos; por defecto, 40 SMVM")
     exp.add_argument("--salida", default="visor/datos.json")

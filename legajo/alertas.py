@@ -26,6 +26,7 @@ from typing import Callable
 
 from . import monotributo
 from .config import ParametrosMonitoreo, PARAMETROS_POR_DEFECTO
+from .capacidad import Capacidad
 from .modelo import Cliente
 from .operaciones import Operacion, Operatoria, Perfil
 from .paises import iso, nombre as nombre_pais
@@ -150,7 +151,8 @@ class Regla:
     descripcion: str
     severidad: str
     evaluar: Callable[..., list[Alerta]]
-    # Las reglas reciben (operatoria, perfil, parametros, cliente). El cliente
+    # Las reglas reciben (operatoria, perfil, parametros, cliente, capacidad).
+    # El cliente
     # entro despues, cuando aparecieron las reglas que comparan la operatoria
     # contra lo que el cliente declaro en el alta: categoria de monotributo,
     # actividad, provincia. Va al final y con valor por defecto para que una
@@ -164,7 +166,8 @@ class Regla:
 # ---------------------------------------------------------------------------
 
 def _sin_perfil(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
-         cliente: Cliente | None = None):
+         cliente: Cliente | None = None,
+         capacidad: Capacidad | None = None):
     """Cliente que opera sin perfil transaccional declarado.
 
     No es una conducta del cliente sino una falta de control, y es de las
@@ -186,7 +189,8 @@ def _sin_perfil(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
 
 
 def _desvio_perfil(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
-         cliente: Cliente | None = None):
+         cliente: Cliente | None = None,
+         capacidad: Capacidad | None = None):
     """Operatoria mensual por encima de lo declarado.
 
     Se evalua mes calendario por mes calendario y se reporta el peor. Un
@@ -220,7 +224,8 @@ def _desvio_perfil(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo
 
 
 def _fraccionamiento(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
-         cliente: Cliente | None = None):
+         cliente: Cliente | None = None,
+         capacidad: Capacidad | None = None):
     """Operaciones sucesivas bajo el umbral de reporte que en conjunto lo superan.
 
     Dos condiciones hacen que esto sea fraccionamiento y no volumen alto.
@@ -277,7 +282,8 @@ def _fraccionamiento(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitor
 
 
 def _efectivo_desproporcionado(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
-         cliente: Cliente | None = None):
+         cliente: Cliente | None = None,
+         capacidad: Capacidad | None = None):
     """Uso de efectivo por encima de lo esperado para la actividad."""
     if not op.total:
         return []
@@ -304,7 +310,8 @@ def _efectivo_desproporcionado(op: Operatoria, perfil: Perfil | None, p: Paramet
 
 
 def _jurisdiccion_no_declarada(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
-         cliente: Cliente | None = None):
+         cliente: Cliente | None = None,
+         capacidad: Capacidad | None = None):
     """Contrapartes en paises que el cliente no declaro operar.
 
     Reusa la normalizacion y las listas de la etapa 2: si el pais ademas esta
@@ -339,7 +346,8 @@ def _jurisdiccion_no_declarada(op: Operatoria, perfil: Perfil | None, p: Paramet
 
 
 def _aceleracion(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
-         cliente: Cliente | None = None):
+         cliente: Cliente | None = None,
+         capacidad: Capacidad | None = None):
     """Salto de volumen respecto del propio historial del cliente.
 
     Es independiente del perfil declarado: un cliente puede estar dentro de
@@ -378,7 +386,8 @@ def _aceleracion(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
 
 
 def _montos_redondos(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitoreo,
-         cliente: Cliente | None = None):
+         cliente: Cliente | None = None,
+         capacidad: Capacidad | None = None):
     """Proporcion alta de importes exactos.
 
     Tipologia clasica: la operatoria genuina deja decimales, la armada usa
@@ -407,7 +416,8 @@ def _montos_redondos(op: Operatoria, perfil: Perfil | None, p: ParametrosMonitor
 
 def _monotributo_excedido(op: Operatoria, perfil: Perfil | None,
                           p: ParametrosMonitoreo,
-                          cliente: Cliente | None = None):
+                          cliente: Cliente | None = None,
+                          capacidad: Capacidad | None = None):
     """Volumen operado anualizado por encima del tope de la categoria declarada.
 
     Es la pregunta central del proyecto puesta sobre el caso mas simple que
@@ -467,6 +477,77 @@ def _monotributo_excedido(op: Operatoria, perfil: Perfil | None,
     )]
 
 
+def _capacidad_excedida(op: Operatoria, perfil: Perfil | None,
+                        p: ParametrosMonitoreo,
+                        cliente: Cliente | None = None,
+                        capacidad: Capacidad | None = None):
+    """Opero mas de lo que su documentacion justifica. Item 3.2.
+
+    Es la pregunta central del proyecto. Se compara lo operado en la ventana
+    observada contra lo que la documentacion justifica para esa misma ventana,
+    y no contra un anualizado: anualizar el operado y compararlo contra un
+    anual introduce una proyeccion que no hace falta.
+
+        justificado = capacidad_anual * (meses / 12) + respaldo_puntual
+
+    El flujo se prorratea porque cubre el periodo entero. La disponibilidad
+    puntual entra completa, porque una venta de inmueble explica un pico y no
+    un doceavo de pico por mes.
+
+    No dispara sin documentacion. Un cliente sin respaldos cargados no es un
+    cliente que no puede justificar: es un legajo incompleto, que es otro
+    hallazgo y le corresponde al item 5.1. Confundirlos convertiria cada
+    legajo a medio cargar en una alerta de lavado.
+
+    La severidad sale del umbral de reporte, que es normativo (40 SMVM,
+    Res. UIF 78/2025). Un excedente por debajo de ese umbral no habria sido
+    reportable ni como operacion suelta. Asi el corte no es un numero elegido
+    por alguien.
+    """
+    if capacidad is None or not capacidad.documentada:
+        return []
+    if op.meses < p.meses_minimos_para_anualizar:
+        return []
+
+    justificado = capacidad.capacidad_anual * (op.meses / 12) + capacidad.respaldo_puntual
+    if op.total <= justificado:
+        return []
+
+    excedente = op.total - justificado
+    grave = p.umbral_reporte > 0 and excedente >= p.umbral_reporte
+
+    detalle = (f"opero ${op.total:,.0f} en {op.meses:.1f} mes(es) y su "
+               f"documentacion justifica ${justificado:,.0f} para ese periodo "
+               f"(${capacidad.capacidad_anual:,.0f} anuales prorrateados")
+    if capacidad.respaldo_puntual:
+        detalle += f" mas ${capacidad.respaldo_puntual:,.0f} de respaldo puntual"
+    detalle += f"). Quedan ${excedente:,.0f} sin respaldo documental"
+
+    # Segundo hallazgo, distinto del primero: una cosa es exceder la capacidad
+    # documentada y otra es que esa capacidad se apoye en papeles que no se
+    # pueden cruzar contra un tercero.
+    if capacidad.proporcion_derivada >= 0.5:
+        detalle += (f". Ademas, el {capacidad.proporcion_derivada:.0%} de la "
+                    f"capacidad documentada sale de documentos emitidos sobre "
+                    f"lo que declaro el propio cliente")
+
+    viejo = capacidad.antiguedad_maxima_en_meses()
+    metodologia = (f"operado contra capacidad economica documentada, "
+                   f"{len(capacidad.computados)} respaldo(s) computado(s)")
+    if viejo is not None:
+        metodologia += f", el mas antiguo de hace {viejo:.0f} mes(es)"
+
+    return [Alerta(
+        cliente_id=op.cliente_id,
+        codigo="CAPACIDAD_EXCEDIDA",
+        severidad=ALTA if grave else MEDIA,
+        descripcion=detalle,
+        metodologia=metodologia,
+        operaciones=tuple(op.operaciones[:8]),
+        monto_involucrado=excedente,
+    )]
+
+
 # ---------------------------------------------------------------------------
 # Catalogo
 # ---------------------------------------------------------------------------
@@ -481,6 +562,9 @@ CATALOGO: tuple[Regla, ...] = (
     Regla("MONOTRIBUTO_EXCEDIDO",
           "volumen anualizado por encima del tope de la categoria declarada",
           MEDIA, _monotributo_excedido),
+    Regla("CAPACIDAD_EXCEDIDA",
+          "opero mas de lo que su documentacion justifica",
+          ALTA, _capacidad_excedida),
     Regla(
         "MONTOS_REDONDOS", "proporcion alta de importes exactos", BAJA, _montos_redondos,
         activa=False,
@@ -501,6 +585,7 @@ def monitorear(
     parametros: ParametrosMonitoreo = PARAMETROS_POR_DEFECTO,
     catalogo: tuple[Regla, ...] = CATALOGO,
     clientes: dict[str, Cliente] | None = None,
+    capacidades: dict[str, Capacidad] | None = None,
 ) -> dict[str, list[Alerta]]:
     """Corre el catalogo sobre cada operatoria.
 
@@ -515,11 +600,13 @@ def monitorear(
     for cliente_id, operatoria in operatorias.items():
         perfil = perfiles.get(cliente_id)
         cliente = (clientes or {}).get(cliente_id)
+        capacidades = capacidades or {}
         alertas: list[Alerta] = []
         for regla in catalogo:
             if not regla.activa:
                 continue
-            alertas.extend(regla.evaluar(operatoria, perfil, parametros, cliente))
+            alertas.extend(regla.evaluar(operatoria, perfil, parametros,
+                                         cliente, capacidades.get(cliente_id)))
         if alertas:
             alertas.sort(key=lambda a: (_ORDEN_SEVERIDAD[a.severidad], -a.monto_involucrado))
             resultado[cliente_id] = alertas

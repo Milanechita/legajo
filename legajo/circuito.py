@@ -20,11 +20,13 @@ from typing import Any
 
 from .alertas import Alerta, monitorear, reglas_inactivas
 from .beneficiario import Resolucion, resolver
+from .capacidad import Capacidad, calcular as calcular_capacidad
 from .config import POLITICA_POR_DEFECTO, Politica, parametros_con_listas
 from .congelamiento import Congelamiento, obligaciones
 from .fuentes.base import Padron
 from .io_planilla import (
     leer_estructura, leer_operaciones, leer_padron, leer_peps, leer_perfiles,
+    leer_respaldos,
 )
 from .matriz import MATRIZ_POR_DEFECTO
 from .modelo import Caso, Cliente, Estado
@@ -53,6 +55,7 @@ class Corrida:
     operatorias: dict[str, Operatoria] = field(default_factory=dict)
     perfiles: dict[str, Perfil] = field(default_factory=dict)
     alertas: dict[str, list[Alerta]] = field(default_factory=dict)
+    capacidades: dict[str, Capacidad] = field(default_factory=dict)
     congelamientos: list[Congelamiento] = field(default_factory=list)
     exposicion: Exposicion | None = None
     umbral_reporte: float = 0.0
@@ -78,6 +81,7 @@ def correr(
     peps: str | Path | None = None,
     operaciones: str | Path | None = None,
     perfiles: str | Path | None = None,
+    respaldos: str | Path | None = None,
     umbral_reporte: float | None = None,
     actor: str = "sistema/legajo",
     avisar: Any = None,
@@ -130,6 +134,18 @@ def correr(
         actor=actor,
     )
 
+    # --- Capacidad economica documentada ---
+    # Va antes del monitoreo porque una de sus reglas la consume, y se calcula
+    # una vez por cliente en vez de una vez por regla.
+    registro_legajos = leer_respaldos(respaldos) if respaldos else None
+    capacidades: dict[str, Capacidad] = {}
+    if registro_legajos is not None:
+        for cliente in clientes:
+            capacidades[cliente.cliente_id] = calcular_capacidad(
+                cliente, registro_legajos.de(cliente.cliente_id))
+        documentados = sum(1 for c in capacidades.values() if c.documentada)
+        decir(f"      {documentados} cliente(s) con capacidad documentada")
+
     # --- Etapa 3: monitoreo transaccional ---
     alertas: dict[str, list[Alerta]] = {}
     operatorias: dict[str, Operatoria] = {}
@@ -151,9 +167,12 @@ def correr(
             decir(f"      umbral de reporte: ${parametros.umbral_reporte:,.0f} ({origen})")
 
         # Los clientes van al monitoreo porque hay reglas que comparan la
-        # operatoria contra lo que el cliente declaro en el alta.
+        # operatoria contra lo que el cliente declaro en el alta, y las
+        # capacidades porque hay una que la compara contra lo que documento.
+        # La capacidad se calcula una vez por cliente y no una vez por regla.
         alertas = monitorear(operatorias, tabla_perfiles, parametros,
-                             clientes={c.cliente_id: c for c in clientes})
+                             clientes={c.cliente_id: c for c in clientes},
+                             capacidades=capacidades)
         total_ops = sum(o.cantidad for o in operatorias.values())
         decir(f"      {total_ops} operacion(es) de {len(operatorias)} cliente(s), "
               f"{len(tabla_perfiles)} perfil(es) declarado(s)")
@@ -228,6 +247,7 @@ def correr(
         operatorias=operatorias,
         perfiles=tabla_perfiles,
         alertas=alertas,
+        capacidades=capacidades,
         congelamientos=congelamientos,
         exposicion=exposicion,
         umbral_reporte=umbral_usado,

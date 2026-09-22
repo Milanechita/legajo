@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
 from .modelo import Caso, Cliente, Documento
 from .operaciones import Operacion, Perfil
+from .procedencia import Periodicidad, RegistroLegajos, Respaldo
 from .paises import iso
 from .pep import PEP, RegistroPEP
 from .screening import Coincidencia, ResultadoScreening
@@ -118,6 +119,42 @@ COLUMNAS_ESTRUCTURA = [
 ]
 
 COLUMNAS_PEP = ["cliente_id", "tipo", "cargo", "fecha_cese", "por_parentesco"]
+
+COLUMNAS_RESPALDOS = [
+    "cliente_id", "tipo", "emitido", "monto", "periodicidad",
+    "periodo_desde", "periodo_hasta", "vence", "referencia",
+]
+
+
+def leer_respaldos(ruta: str | Path) -> RegistroLegajos:
+    """Lee los documentos respaldatorios del legajo.
+
+    Una fila sin fecha de emision se descarta: sin eso no se puede fechar el
+    hecho economico ni siquiera por aproximacion, y computar un monto sin
+    fecha es lo que el item 3.1 evita.
+    """
+    registro = RegistroLegajos()
+    for fila in _leer_tabla(Path(ruta)):
+        cliente_id = (fila.get("cliente_id") or "").strip()
+        emitido = _fecha_iso(fila.get("emitido") or "")
+        if not cliente_id or emitido is None:
+            continue
+        try:
+            periodicidad = Periodicidad((fila.get("periodicidad") or "UNICA").strip().upper())
+        except ValueError:
+            periodicidad = Periodicidad.UNICA
+        registro.de(cliente_id).agregar_respaldo(Respaldo(
+            cliente_id=cliente_id,
+            tipo=(fila.get("tipo") or "").strip().upper(),
+            emitido=emitido,
+            monto=_numero(fila.get("monto")),
+            periodicidad=periodicidad,
+            periodo_desde=_fecha_iso(fila.get("periodo_desde") or ""),
+            periodo_hasta=_fecha_iso(fila.get("periodo_hasta") or ""),
+            vence=_fecha_iso(fila.get("vence") or ""),
+            referencia=(fila.get("referencia") or "").strip(),
+        ))
+    return registro
 
 
 def leer_peps(ruta: str | Path) -> RegistroPEP:

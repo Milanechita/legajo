@@ -46,6 +46,9 @@ resultado. Esta es la tabla completa, para consulta.
 | El descarte dice primero qué acredita el documento | Un balance prueba que la sociedad existe y operó por ese monto. Descartarlo en silencio le haría creer al analista que el papel no vale nada |
 | La confiabilidad viaja con la cifra, no la multiplica | Un coeficiente por tipo de documento sería un número inventado, y además no arregla la titularidad: multiplicar el balance por 0,5 sigue dando plata que el socio no tiene |
 | La capacidad no se corta por antigüedad | Cortar inventaría el umbral exacto que el proyecto evita, y dejaría en cero a un cliente con documentación vieja igual que a uno sin documentación. La fecha de cada respaldo se expone para que el corte, si hace falta, sea explícito |
+| Se compara lo operado contra lo justificado para la misma ventana | Anualizar lo operado y compararlo contra un anual mete una proyección que no hace falta. El flujo se prorratea por el período observado y la disponibilidad puntual entra completa |
+| Sin documentación no hay alerta de capacidad | Un cliente sin respaldos cargados no es un cliente que no puede justificar: es un legajo incompleto, que es otro hallazgo. Confundirlos convierte cada legajo a medio cargar en una alerta de lavado |
+| La severidad de `CAPACIDAD_EXCEDIDA` sale del umbral de reporte | 40 SMVM, Res. UIF 78/2025. Un excedente por debajo de ese umbral no habría sido reportable ni como operación suelta, así que el corte es normativo y no un número elegido |
 | `io_planilla.py` no se refactoriza por ahora | Funciona y no es superficie visible. Crece mal, pero reescribir lo que no rompe nada tiene costo y no tiene beneficio |
 
 El screening contra listas no se elimina aunque baje de protagonismo: sigue
@@ -61,15 +64,26 @@ varios citan la resolución que la obliga.
 
 ---
 
-## Cortes sin calibrar
+## Pendientes marcados
 
-**SIN CALIBRAR: revisar antes de usar en producción.**
+Dos clases de deuda, con etiqueta propia y la misma cola, para que un solo
+comando las encuentre a las dos:
 
-| Parámetro | Dónde | Qué decide |
-|---|---|---|
-| `factor_monotributo_grave` = 2.0 | `config.py` | Si `MONOTRIBUTO_EXCEDIDO` sale MEDIA o ALTA. Sale de razonar, no de medir. Nadie lo comparó contra operatoria real. Es la severidad que el analista mira primero: si está mal, entierra casos graves entre los medios o llena de ALTA lo que no lo es |
+```bash
+grep -rn "SIN CALIBRAR\|PENDIENTE DE POLITICA" legajo/
+```
 
-El aviso va en el código, en el parámetro y en el lugar donde se usa.
+**SIN CALIBRAR** es un número que decide algo y que nadie midió.
+**PENDIENTE DE POLÍTICA** es una decisión que todavía no se tomó, y mientras
+tanto el programa hace lo más conservador y lo dice.
+
+| Marca | Qué | Dónde | Qué decide |
+|---|---|---|---|
+| SIN CALIBRAR | `factor_monotributo_grave` = 2.0 | `config.py`, `alertas.py` | Si `MONOTRIBUTO_EXCEDIDO` sale MEDIA o ALTA. Sale de razonar, no de medir. Es la severidad que el analista mira primero: si está mal, entierra casos graves entre los medios o llena de ALTA lo que no lo es |
+| PENDIENTE DE POLÍTICA | Antigüedad de los respaldos | `capacidad.py` | Si un respaldo de 2019 pesa igual que uno de este mes al comparar contra lo operado. Hoy pesan igual y la fecha se expone en vez de aplicarse. Si hace falta ponderar, tiene que ser explícito y no un filtro silencioso adentro del cálculo |
+
+Las dos se resuelven en el ítem 7.1. El aviso va en el código, en el lugar
+exacto donde el comportamiento ocurre, no solo en la documentación.
 
 ---
 
