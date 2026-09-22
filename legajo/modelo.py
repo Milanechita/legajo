@@ -234,6 +234,11 @@ class Cliente:
     telefono: str | None = None
     email: str | None = None
     fecha_alta: str | None = None           # ISO, cuando se abrio la relacion
+    # Cuando se constituyo la sociedad, que sale del estatuto. No es lo mismo
+    # que fecha_alta: una sociedad de 2005 puede haberse hecho cliente ayer, y
+    # una constituida el mes pasado puede operar desde el primer dia. La
+    # tipologia de riesgo mira la constitucion, no la vinculacion.
+    fecha_constitucion: str | None = None   # ISO, solo para personas juridicas
     es_sujeto_obligado: bool = False        # declarado, Ley 25.246 art. 20
 
 

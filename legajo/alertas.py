@@ -152,11 +152,11 @@ class Regla:
     severidad: str
     evaluar: Callable[..., list[Alerta]]
     # Las reglas reciben (operatoria, perfil, parametros, cliente, capacidad).
-    # El cliente
-    # entro despues, cuando aparecieron las reglas que comparan la operatoria
-    # contra lo que el cliente declaro en el alta: categoria de monotributo,
-    # actividad, provincia. Va al final y con valor por defecto para que una
-    # regla que no lo necesita no tenga que nombrarlo.
+    # Los dos ultimos entraron despues, cuando aparecieron las reglas que
+    # comparan la operatoria contra lo que el cliente declaro en el alta y
+    # contra lo que documento. Van al final y con valor por defecto, asi que
+    # una regla que no los necesita no tiene que nombrarlos y las viejas no
+    # cambiaron de comportamiento.
     activa: bool = True
     motivo_inactiva: str = ""
 
@@ -548,6 +548,82 @@ def _capacidad_excedida(op: Operatoria, perfil: Perfil | None,
     )]
 
 
+def _meses_desde(fecha_iso: str | None, hasta: date | None) -> float | None:
+    """Meses entre una fecha ISO y otra. None si falta alguna de las dos."""
+    if not fecha_iso or hasta is None:
+        return None
+    try:
+        desde = date.fromisoformat(fecha_iso.strip()[:10])
+    except ValueError:
+        return None
+    return max((hasta - desde).days, 0) / 30.44
+
+
+def _sociedad_sin_respaldo(op: Operatoria, perfil: Perfil | None,
+                           p: ParametrosMonitoreo,
+                           cliente: Cliente | None = None,
+                           capacidad: Capacidad | None = None):
+    """Sociedad que mueve plata sin nada que acredite de donde sale. Item 3.5.
+
+    Cubre el hueco que CAPACIDAD_EXCEDIDA deja a proposito. Esa regla no
+    dispara sin documentacion, porque un legajo a medio cargar no es un cliente
+    que no puede justificar. Pero para una persona juridica que opera por
+    encima del umbral de reporte, la ausencia total de respaldo si es un
+    hallazgo: una sociedad cierra balance todos los anios, y que no haya
+    ninguno en el legajo es un dato sobre el legajo o sobre la sociedad.
+
+    Las ventas del balance contra lo operado no se comparan aca. Eso ya lo hace
+    CAPACIDAD_EXCEDIDA: para una entidad, el balance es lo que alimenta la
+    capacidad anual. Escribir una segunda comparacion seria duplicar la
+    primera y garantizar que en la proxima correccion las dos den distinto.
+
+    Los dos cortes salen de afuera y no de una eleccion:
+
+      el volumen      umbral de reporte, 40 SMVM, Res. UIF 78/2025
+      la antiguedad   si la sociedad cerro o no su primer ejercicio, que es
+                      anual por definicion y no un numero que alguien eligio
+
+    La severidad separa dos situaciones que no son iguales. Una sociedad
+    constituida hace meses todavia no pudo cerrar un ejercicio, asi que la
+    falta de balance se explica sola y lo que importa es el volumen. Una
+    sociedad de diez anios sin un solo balance en el legajo es otra cosa.
+    """
+    if cliente is None or cliente.tipo.strip().upper() == "PERSONA":
+        return []
+    if capacidad is not None and capacidad.documentada:
+        return []
+    if p.umbral_reporte <= 0 or op.total < p.umbral_reporte:
+        return []
+
+    meses = _meses_desde(cliente.fecha_constitucion, op.hasta)
+    if meses is None:
+        antiguedad = "sin fecha de constitucion en el legajo"
+        reciente = False
+    elif meses < 12:
+        antiguedad = (f"constituida hace {meses:.0f} mes(es), todavia sin "
+                      f"cerrar su primer ejercicio")
+        reciente = True
+    else:
+        antiguedad = f"constituida hace {meses / 12:.0f} anio(s)"
+        reciente = False
+
+    return [Alerta(
+        cliente_id=op.cliente_id,
+        codigo="SOCIEDAD_SIN_RESPALDO",
+        severidad=MEDIA if reciente else ALTA,
+        descripcion=(
+            f"sociedad {antiguedad}. Opero ${op.total:,.0f} en "
+            f"{op.meses:.1f} mes(es), por encima del umbral de reporte de "
+            f"${p.umbral_reporte:,.0f}, sin ningun documento en el legajo que "
+            f"acredite capacidad economica"
+        ),
+        metodologia=("ausencia de respaldo documental en persona juridica con "
+                     "operatoria por encima del umbral de reporte"),
+        operaciones=tuple(op.operaciones[:8]),
+        monto_involucrado=op.total,
+    )]
+
+
 # ---------------------------------------------------------------------------
 # Catalogo
 # ---------------------------------------------------------------------------
@@ -565,6 +641,9 @@ CATALOGO: tuple[Regla, ...] = (
     Regla("CAPACIDAD_EXCEDIDA",
           "opero mas de lo que su documentacion justifica",
           ALTA, _capacidad_excedida),
+    Regla("SOCIEDAD_SIN_RESPALDO",
+          "persona juridica que opera fuerte sin respaldo documental",
+          ALTA, _sociedad_sin_respaldo),
     Regla(
         "MONTOS_REDONDOS", "proporcion alta de importes exactos", BAJA, _montos_redondos,
         activa=False,

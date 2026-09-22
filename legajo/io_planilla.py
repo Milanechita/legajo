@@ -85,6 +85,7 @@ def _fila_a_cliente(fila: dict[str, str]) -> Cliente:
         telefono=opcional("telefono"),
         email=opcional("email"),
         fecha_alta=opcional("fecha_alta"),
+        fecha_constitucion=opcional("fecha_constitucion"),
         es_sujeto_obligado=_booleano(fila.get("es_sujeto_obligado", "")),
     )
 

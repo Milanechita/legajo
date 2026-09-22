@@ -49,6 +49,9 @@ resultado. Esta es la tabla completa, para consulta.
 | Se compara lo operado contra lo justificado para la misma ventana | Anualizar lo operado y compararlo contra un anual mete una proyección que no hace falta. El flujo se prorratea por el período observado y la disponibilidad puntual entra completa |
 | Sin documentación no hay alerta de capacidad | Un cliente sin respaldos cargados no es un cliente que no puede justificar: es un legajo incompleto, que es otro hallazgo. Confundirlos convierte cada legajo a medio cargar en una alerta de lavado |
 | La severidad de `CAPACIDAD_EXCEDIDA` sale del umbral de reporte | 40 SMVM, Res. UIF 78/2025. Un excedente por debajo de ese umbral no habría sido reportable ni como operación suelta, así que el corte es normativo y no un número elegido |
+| Las ventas del balance contra lo operado no tienen regla propia | Para una entidad el balance alimenta la capacidad anual, así que `CAPACIDAD_EXCEDIDA` ya hace esa comparación. Una segunda regla sería un duplicado que en la próxima corrección da distinto |
+| `SOCIEDAD_SIN_RESPALDO` cubre el hueco, no lo duplica | `CAPACIDAD_EXCEDIDA` no dispara sin documentación, a propósito. Para una sociedad que opera por encima del umbral de reporte, la ausencia total de respaldo sí es un hallazgo: una sociedad cierra balance todos los años |
+| La fecha de constitución no es la fecha de alta | Una sociedad de 2005 puede haberse hecho cliente ayer, y una constituida el mes pasado puede operar desde el primer día. La tipología mira la constitución |
 | `io_planilla.py` no se refactoriza por ahora | Funciona y no es superficie visible. Crece mal, pero reescribir lo que no rompe nada tiene costo y no tiene beneficio |
 
 El screening contra listas no se elimina aunque baje de protagonismo: sigue
