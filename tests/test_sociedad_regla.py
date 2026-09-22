@@ -144,3 +144,21 @@ def test_la_alerta_no_acusa_de_nada():
     texto = (a.descripcion + " " + a.metodologia).lower()
     for palabra in ("evad", "fraude", "delito", "ilicit", "pantalla", "sospech"):
         assert palabra not in texto, f"la alerta dice {palabra!r}"
+
+
+def test_la_antiguedad_no_hace_disparar_por_si_sola():
+    # Una sociedad vieja y sin balance que mueve poco no es el mismo hallazgo
+    # que una que mueve por encima del umbral. Si la antiguedad disparara sola,
+    # las dos saldrian marcadas igual.
+    assert correr(sociedad("2005-01-01"), operatoria(UMBRAL * 0.3)) == []
+    assert correr(sociedad("2026-08-01"), operatoria(UMBRAL * 0.3)) == []
+
+
+def test_el_proxy_del_primer_ejercicio_esta_declarado_como_aproximacion():
+    # El ejercicio cierra en la fecha que fija el estatuto, que el modelo no
+    # tiene. Doce meses es un proxy y el codigo tiene que decirlo, para que
+    # nadie lo lea como el dato exacto.
+    from legajo import alertas
+    texto = alertas._sociedad_sin_respaldo.__doc__
+    assert "APROXIMACION DECLARADA" in texto
+    assert "el estatuto" in texto

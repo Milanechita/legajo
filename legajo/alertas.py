@@ -580,14 +580,30 @@ def _sociedad_sin_respaldo(op: Operatoria, perfil: Perfil | None,
     Los dos cortes salen de afuera y no de una eleccion:
 
       el volumen      umbral de reporte, 40 SMVM, Res. UIF 78/2025
-      la antiguedad   si la sociedad cerro o no su primer ejercicio, que es
-                      anual por definicion y no un numero que alguien eligio
+      la antiguedad   si la sociedad cerro o no su primer ejercicio
+
+    APROXIMACION DECLARADA. "Cerro o no un ejercicio" se calcula como meses
+    desde la fecha de constitucion, y eso no es el dato exacto. El ejercicio
+    contable cierra en la fecha que fija el estatuto, que puede caer antes del
+    aniversario de la constitucion: una sociedad constituida en marzo con
+    cierre en diciembre cierra su primer ejercicio a los nueve meses y no a los
+    doce. El modelo no tiene esa fecha, asi que el corte de doce meses es un
+    proxy razonable y no el dato del estatuto. Nunca se muestra como si lo
+    fuera, igual que ZONA_FRONTERA_PROVINCIA.
+
+    La consecuencia concreta es acotada: una sociedad con cierre temprano puede
+    salir MEDIA cuando le corresponderia ALTA. No cambia si la alerta dispara o
+    no, solo su severidad, y siempre hacia el lado conservador.
 
     La severidad separa dos situaciones que no son iguales. Una sociedad
     constituida hace meses todavia no pudo cerrar un ejercicio, asi que la
     falta de balance se explica sola y lo que importa es el volumen. Una
     sociedad de diez anios sin un solo balance en el legajo es otra cosa.
     """
+    # Las tres condiciones de disparo. La antiguedad no es una de ellas: solo
+    # decide la severidad. Una sociedad vieja y sin balance que mueve poco no
+    # es el mismo hallazgo que una que mueve por encima del umbral, y marcar
+    # las dos igual seria ruido.
     if cliente is None or cliente.tipo.strip().upper() == "PERSONA":
         return []
     if capacidad is not None and capacidad.documentada:
@@ -599,6 +615,8 @@ def _sociedad_sin_respaldo(op: Operatoria, perfil: Perfil | None,
     if meses is None:
         antiguedad = "sin fecha de constitucion en el legajo"
         reciente = False
+    # APROXIMACION: doce meses como proxy del primer cierre de ejercicio.
+    # El estatuto puede fijarlo antes. Ver el bloque de arriba.
     elif meses < 12:
         antiguedad = (f"constituida hace {meses:.0f} mes(es), todavia sin "
                       f"cerrar su primer ejercicio")
