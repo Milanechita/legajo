@@ -52,6 +52,10 @@ resultado. Esta es la tabla completa, para consulta.
 | Las ventas del balance contra lo operado no tienen regla propia | Para una entidad el balance alimenta la capacidad anual, así que `CAPACIDAD_EXCEDIDA` ya hace esa comparación. Una segunda regla sería un duplicado que en la próxima corrección da distinto |
 | `SOCIEDAD_SIN_RESPALDO` cubre el hueco, no lo duplica | `CAPACIDAD_EXCEDIDA` no dispara sin documentación, a propósito. Para una sociedad que opera por encima del umbral de reporte, la ausencia total de respaldo sí es un hallazgo: una sociedad cierra balance todos los años |
 | La fecha de constitución no es la fecha de alta | Una sociedad de 2005 puede haberse hecho cliente ayer, y una constituida el mes pasado puede operar desde el primer día. La tipología mira la constitución |
+| Una diferencia de texto libre no se afirma como hallazgo | Medido sobre 10 constancias de ARCA: comparar la actividad por texto da 10 diferencias de las que 3 son cambios reales, 30% de precisión. Cinco tienen el mismo código CLAE con otra redacción ("MEDICO" contra "SERVICIOS DE MEDICOS ESPECIALISTAS"). Por código salen las 3 y ninguna de más |
+| Los hallazgos y las diferencias para leer van separados | Mezclarlos ahoga a los que el programa sí puede afirmar. El expediente recibe `DISCREPANCIA_CONSTATADA` y `DIFERENCIA_PARA_LEER` como entradas distintas |
+| El código de actividad se compara por sus dígitos | ARCA escribe el mismo código de varias formas: "620100", "62.01.00", "620100 - Servicios de...". Quedarse con los dígitos evita una discrepancia falsa por cómo vino el papel |
+| ARCA se importa desde archivo, no por API | No hay API pública gratuita. El web service oficial pide certificado digital de la entidad y la consulta pública tiene captcha. Mismo patrón que los informes comerciales |
 | `io_planilla.py` no se refactoriza por ahora | Funciona y no es superficie visible. Crece mal, pero reescribir lo que no rompe nada tiene costo y no tiene beneficio |
 
 El screening contra listas no se elimina aunque baje de protagonismo: sigue

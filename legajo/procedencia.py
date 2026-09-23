@@ -85,6 +85,28 @@ class Campo(str, Enum):
     PAIS_RESIDENCIA = "pais_residencia"
     ACTIVIDAD = "actividad"
     OFERTA_PUBLICA = "oferta_publica"
+    # Los dos de abajo son categoricos y se comparan exacto, a diferencia de
+    # ACTIVIDAD, que es texto libre. Esa diferencia es la que decide si una
+    # discrepancia se puede afirmar o solo se puede mostrar.
+    ACTIVIDAD_CODIGO = "actividad_codigo"
+    CONDICION_IVA = "condicion_iva"
+
+
+# Campos cuya discrepancia se puede afirmar, porque son categoricos y se
+# comparan exacto. Los demas son texto libre: una diferencia ahi puede ser un
+# cambio real o la misma cosa escrita distinto, y el programa no tiene como
+# saberlo.
+#
+# Medido sobre 10 constancias de ARCA contra el padron de ejemplo: comparar la
+# actividad por texto libre da 10 discrepancias de las cuales 3 son cambios
+# reales, o sea 30% de precision. Cinco tienen el mismo codigo CLAE y otra
+# redaccion ("MEDICO" contra "SERVICIOS DE MEDICOS ESPECIALISTAS") y dos no
+# tienen codigo al alta, asi que no se pueden verificar. Comparando el codigo
+# salen las 3 reales y ninguna de mas.
+#
+# Por eso una diferencia de texto no se afirma como hallazgo: se muestra al
+# lado de lo declarado y la conclusion la saca el analista.
+CAMPOS_AFIRMABLES: frozenset = frozenset()   # se completa abajo, con Campo ya definido
 
 
 class Resultado(str, Enum):
@@ -96,6 +118,19 @@ class Resultado(str, Enum):
     # no un hallazgo: mezclarlo con DISCREPA inflaria las discrepancias con
     # campos que el cliente nunca contradijo porque nunca los completo.
     COMPLETA = "COMPLETA"
+
+
+CAMPOS_AFIRMABLES = frozenset({
+    Campo.TIPO,
+    Campo.FECHA_NACIMIENTO,
+    Campo.NACIONALIDAD,
+    Campo.PAIS_RESIDENCIA,
+    Campo.OFERTA_PUBLICA,
+    Campo.ACTIVIDAD_CODIGO,
+    Campo.CONDICION_IVA,
+})
+# NOMBRE y ACTIVIDAD quedan afuera. Los dos son texto libre y dos redacciones
+# de lo mismo dan distinto por mas que se normalicen.
 
 
 class Periodicidad(str, Enum):
@@ -138,6 +173,17 @@ def _fecha(valor: Any) -> str:
     return str(valor or "").strip()[:10]
 
 
+def _codigo(valor: Any) -> str:
+    """Codigo CLAE, solo digitos.
+
+    ARCA lo escribe de varias formas para el mismo codigo: "620100",
+    "620100 - Servicios de consultores", "62.01.00". Quedarse con los digitos
+    hace que las tres sean el mismo codigo y evita una discrepancia falsa por
+    como vino escrito el papel.
+    """
+    return "".join(c for c in str(valor or "") if c.isdigit())
+
+
 def _booleano(valor: Any) -> str:
     if isinstance(valor, bool):
         return "SI" if valor else "NO"
@@ -155,8 +201,13 @@ NORMALIZADORES: dict[Campo, Callable[[Any], str]] = {
     # Hoy la actividad es texto libre y se compara normalizado. Cuando el
     # padron tenga el codigo CLAE de ARCA (item 3.4), este normalizador pasa a
     # devolver el codigo y el resto del modulo no se entera.
+    # Texto libre. Se normaliza, pero dos redacciones distintas de la misma
+    # actividad siguen dando distinto, asi que una diferencia aca no alcanza
+    # para afirmar nada. Ver `_codigo`.
     Campo.ACTIVIDAD: _texto,
     Campo.OFERTA_PUBLICA: _booleano,
+    Campo.ACTIVIDAD_CODIGO: _codigo,
+    Campo.CONDICION_IVA: lambda v: str(v or "").strip().upper(),
 }
 
 
@@ -207,8 +258,26 @@ class Cotejo:
 
     @property
     def es_hallazgo(self) -> bool:
-        """Solo DISCREPA es un hallazgo. COMPLETA es informacion nueva."""
-        return self.resultado is Resultado.DISCREPA
+        """Una diferencia que el programa puede afirmar.
+
+        Hacen falta las dos cosas: que el resultado sea DISCREPA y que el campo
+        sea de los que se comparan exacto. COMPLETA es informacion nueva y no
+        contradice nada, y una diferencia de texto libre puede ser la misma
+        actividad escrita de otra forma.
+        """
+        return (self.resultado is Resultado.DISCREPA
+                and self.campo in CAMPOS_AFIRMABLES)
+
+    @property
+    def requiere_lectura(self) -> bool:
+        """Difiere, pero en un campo de texto libre.
+
+        No es un hallazgo ni es nada: es un par de valores que hay que leer.
+        Meterlo entre los hallazgos ahogaria a los que si lo son, que fue
+        exactamente lo que mostro la medicion contra ARCA.
+        """
+        return (self.resultado is Resultado.DISCREPA
+                and self.campo not in CAMPOS_AFIRMABLES)
 
 
 @dataclass(frozen=True)
@@ -369,7 +438,16 @@ class LegajoCliente:
         return salida
 
     def discrepancias(self, cliente: Cliente) -> list[Cotejo]:
+        """Todo lo que difiere, afirmable o no. Para el expediente."""
         return [c for c in self.cotejos(cliente) if c.resultado is Resultado.DISCREPA]
+
+    def hallazgos(self, cliente: Cliente) -> list[Cotejo]:
+        """Las diferencias que el programa puede afirmar."""
+        return [c for c in self.cotejos(cliente) if c.es_hallazgo]
+
+    def para_revisar(self, cliente: Cliente) -> list[Cotejo]:
+        """Las diferencias de texto libre, que las lee una persona."""
+        return [c for c in self.cotejos(cliente) if c.requiere_lectura]
 
     def completados(self, cliente: Cliente) -> list[Cotejo]:
         return [c for c in self.cotejos(cliente) if c.resultado is Resultado.COMPLETA]

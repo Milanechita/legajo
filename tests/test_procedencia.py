@@ -66,12 +66,64 @@ def test_el_dato_que_coincide_no_es_hallazgo():
     assert not cotejo.es_hallazgo
 
 
-def test_la_actividad_inscripta_distinta_de_la_declarada_es_discrepancia():
+def test_la_actividad_en_texto_libre_difiere_pero_no_se_afirma_como_hallazgo():
+    # Esta prueba antes exigia lo contrario, y la medicion la corrigio. Sobre
+    # 10 constancias de ARCA, comparar la actividad por texto libre dio 10
+    # discrepancias de las que solo 3 eran cambios reales: cinco tenian el
+    # mismo codigo CLAE con otra redaccion, del tipo "MEDICO" contra
+    # "SERVICIOS DE MEDICOS ESPECIALISTAS". Afirmar esas como hallazgo ahoga a
+    # las tres que si lo son.
     legajo = LegajoCliente("CL001")
     legajo.constatar(constatacion(Campo.ACTIVIDAD, "Servicios financieros"))
     cotejo = legajo.cotejar(cliente(), Campo.ACTIVIDAD)
     assert cotejo.resultado is Resultado.DISCREPA
+    assert not cotejo.es_hallazgo
+    assert cotejo.requiere_lectura
+
+
+def test_el_codigo_de_actividad_distinto_si_es_un_hallazgo():
+    # El codigo es categorico y se compara exacto. Si cambio, el cliente
+    # cambio de actividad y no lo informo.
+    legajo = LegajoCliente("CL001")
+    legajo.constatar(constatacion(Campo.ACTIVIDAD_CODIGO, "649999"))
+    cotejo = legajo.cotejar(cliente(actividad_codigo="477320"),
+                            Campo.ACTIVIDAD_CODIGO)
     assert cotejo.es_hallazgo
+    assert not cotejo.requiere_lectura
+
+
+def test_el_mismo_codigo_escrito_distinto_no_es_hallazgo():
+    # ARCA escribe el mismo codigo de varias formas. Quedarse con los digitos
+    # evita una discrepancia falsa por como vino el papel.
+    legajo = LegajoCliente("CL001")
+    legajo.constatar(constatacion(Campo.ACTIVIDAD_CODIGO,
+                                  "620100 - Servicios de consultores"))
+    cotejo = legajo.cotejar(cliente(actividad_codigo="62.01.00"),
+                            Campo.ACTIVIDAD_CODIGO)
+    assert cotejo.resultado is Resultado.COINCIDE
+
+
+def test_la_condicion_de_iva_distinta_es_un_hallazgo():
+    legajo = LegajoCliente("CL001")
+    legajo.constatar(constatacion(Campo.CONDICION_IVA, "RI"))
+    cotejo = legajo.cotejar(cliente(condicion_iva="MONOTRIBUTO"),
+                            Campo.CONDICION_IVA)
+    assert cotejo.es_hallazgo
+
+
+def test_los_hallazgos_y_lo_que_hay_que_leer_no_se_mezclan():
+    legajo = LegajoCliente("CL001")
+    legajo.constatar(constatacion(Campo.ACTIVIDAD, "Servicios financieros"))
+    legajo.constatar(constatacion(Campo.ACTIVIDAD_CODIGO, "649999"))
+    c = cliente(actividad_codigo="477320")
+
+    hallazgos = {x.campo for x in legajo.hallazgos(c)}
+    revisar = {x.campo for x in legajo.para_revisar(c)}
+    assert hallazgos == {Campo.ACTIVIDAD_CODIGO}
+    assert revisar == {Campo.ACTIVIDAD}
+    assert hallazgos & revisar == set()
+    # Las dos juntas siguen siendo todas las diferencias.
+    assert len(legajo.discrepancias(c)) == len(hallazgos) + len(revisar)
 
 
 def test_un_campo_que_el_cliente_no_declaro_se_completa_y_no_discrepa():

@@ -1,0 +1,11 @@
+cliente_id,cuit,consultado,condicion_iva,categoria_monotributo,actividad_codigo,actividad_descripcion
+AR004,20990000051,2026-09-20,MONOTRIBUTO,D,477320,Venta al por menor de prendas de vestir
+AR007,27990000080,2026-09-20,RI,,463199,Venta al por mayor de alimentos
+AR012,20990000132,2026-09-20,RI,,862200,Servicios de medicos especialistas
+AR016,27990000188,2026-09-20,MONOTRIBUTO,C,649999,Servicios financieros n.c.p.
+AR021,20990000256,2026-09-20,MONOTRIBUTO,A,681098,Servicios inmobiliarios n.c.p.
+AR026,30990000308,2026-09-20,RI,,410011,Construccion de edificios residenciales
+AR031,30990000359,2026-09-20,RI,,466330,Venta al por mayor de productos quimicos
+AR034,30990000383,2026-09-20,RI,,649999,Servicios financieros n.c.p.
+AR003,27990000048,2026-09-20,MONOTRIBUTO,B,741000,Servicios de diseno especializado
+AR005,27990000064,2026-09-20,RI,,854910,Servicios de ensenanza

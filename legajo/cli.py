@@ -188,6 +188,7 @@ def _correr_con_args(args: argparse.Namespace, padron, clientes) -> Corrida:
         operaciones=getattr(args, "operaciones", None),
         perfiles=getattr(args, "perfiles", None),
         respaldos=getattr(args, "respaldos", None),
+        arca=getattr(args, "arca", None),
         umbral_reporte=getattr(args, "umbral_reporte", None),
         actor=args.actor,
         avisar=a_consola,
@@ -494,6 +495,8 @@ def main(argv: list[str] | None = None) -> int:
     cir.add_argument("--perfiles", help="CSV o XLSX con los perfiles transaccionales")
     cir.add_argument("--respaldos",
                      help="CSV o XLSX con los documentos respaldatorios")
+    cir.add_argument("--arca",
+                     help="CSV o XLSX con constancias de inscripcion de ARCA")
     cir.add_argument("--umbral-reporte", type=float, default=None,
                      help="umbral de reporte en pesos; por defecto, 40 SMVM segun "
                           "Res. UIF 78/2025")
@@ -528,6 +531,8 @@ def main(argv: list[str] | None = None) -> int:
     exp.add_argument("--perfiles", help="CSV o XLSX con los perfiles transaccionales")
     exp.add_argument("--respaldos",
                      help="CSV o XLSX con los documentos respaldatorios")
+    exp.add_argument("--arca",
+                     help="CSV o XLSX con constancias de inscripcion de ARCA")
     exp.add_argument("--umbral-reporte", type=float, default=None,
                      help="umbral de reporte en pesos; por defecto, 40 SMVM")
     exp.add_argument("--salida", default="visor/datos.json")

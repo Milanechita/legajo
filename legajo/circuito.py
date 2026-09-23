@@ -25,7 +25,8 @@ from .config import POLITICA_POR_DEFECTO, Politica, parametros_con_listas
 from .congelamiento import Congelamiento, obligaciones
 from .fuentes.base import Padron
 from .io_planilla import (
-    leer_estructura, leer_operaciones, leer_padron, leer_peps, leer_perfiles,
+    leer_arca, leer_estructura, leer_operaciones, leer_padron, leer_peps,
+    leer_perfiles,
     leer_respaldos,
 )
 from .matriz import MATRIZ_POR_DEFECTO
@@ -82,6 +83,7 @@ def correr(
     operaciones: str | Path | None = None,
     perfiles: str | Path | None = None,
     respaldos: str | Path | None = None,
+    arca: str | Path | None = None,
     umbral_reporte: float | None = None,
     actor: str = "sistema/legajo",
     avisar: Any = None,
@@ -138,6 +140,10 @@ def correr(
     # Va antes del monitoreo porque una de sus reglas la consume, y se calcula
     # una vez por cliente en vez de una vez por regla.
     registro_legajos = leer_respaldos(respaldos) if respaldos else None
+    if arca:
+        # Las constancias van al mismo legajo que los respaldos: dos
+        # registros paralelos por cliente se despegan solos.
+        registro_legajos = leer_arca(arca, registro_legajos)
     capacidades: dict[str, Capacidad] = {}
     if registro_legajos is not None:
         for cliente in clientes:
@@ -145,6 +151,55 @@ def correr(
                 cliente, registro_legajos.de(cliente.cliente_id))
         documentados = sum(1 for c in capacidades.values() if c.documentada)
         decir(f"      {documentados} cliente(s) con capacidad documentada")
+
+    # --- Cotejo contra las fuentes externas, item 3.4 ---
+    # El expediente recibe las dos clases por separado. Un hallazgo es algo que
+    # el programa puede afirmar, como un codigo de actividad que cambio. Una
+    # lectura es un par de valores que difieren en texto libre y que decide una
+    # persona. Mezclarlas ahoga a las primeras: medido contra ARCA, comparar la
+    # actividad por texto da 30% de precision y por codigo da 100%.
+    if registro_legajos is not None:
+        indice_casos = {c.cliente.cliente_id: c for c in casos}
+        total_hallazgos = total_lecturas = 0
+        for cliente in clientes:
+            legajo = registro_legajos.de(cliente.cliente_id)
+            caso = indice_casos.get(cliente.cliente_id)
+            if caso is None or not len(legajo):
+                continue
+
+            for cotejo in legajo.hallazgos(cliente):
+                total_hallazgos += 1
+                caso.registrar(
+                    actor, "DISCREPANCIA_CONSTATADA",
+                    campo=cotejo.campo.value,
+                    declarado=cotejo.declarado,
+                    constatado=cotejo.hallado,
+                    origen=cotejo.constatacion.origen.value,
+                    consultado=cotejo.constatacion.fecha_consulta.isoformat(),
+                    referencia=cotejo.constatacion.referencia,
+                )
+            for cotejo in legajo.para_revisar(cliente):
+                total_lecturas += 1
+                caso.registrar(
+                    actor, "DIFERENCIA_PARA_LEER",
+                    campo=cotejo.campo.value,
+                    declarado=cotejo.declarado,
+                    constatado=cotejo.hallado,
+                    origen=cotejo.constatacion.origen.value,
+                    nota=("texto libre: puede ser la misma cosa escrita de otra "
+                          "forma. Lo decide el analista"),
+                )
+            for cotejo in legajo.completados(cliente):
+                caso.registrar(
+                    actor, "DATO_COMPLETADO",
+                    campo=cotejo.campo.value,
+                    constatado=cotejo.hallado,
+                    origen=cotejo.constatacion.origen.value,
+                )
+
+        if total_hallazgos or total_lecturas:
+            decir(f"      {total_hallazgos} discrepancia(s) constatada(s), "
+                  f"{total_lecturas} diferencia(s) de texto para leer")
 
     # --- Etapa 3: monitoreo transaccional ---
     alertas: dict[str, list[Alerta]] = {}

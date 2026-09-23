@@ -24,7 +24,9 @@ if TYPE_CHECKING:
 
 from .modelo import Caso, Cliente, Documento
 from .operaciones import Operacion, Perfil
-from .procedencia import Periodicidad, RegistroLegajos, Respaldo
+from .procedencia import (
+    Campo, Constatacion, Origen, Periodicidad, RegistroLegajos, Respaldo,
+)
 from .paises import iso
 from .pep import PEP, RegistroPEP
 from .screening import Coincidencia, ResultadoScreening
@@ -77,6 +79,7 @@ def _fila_a_cliente(fila: dict[str, str]) -> Cliente:
         actividad=opcional("actividad"),
         oferta_publica=_booleano(fila.get("oferta_publica", "")),
         condicion_iva=opcional("condicion_iva"),
+        actividad_codigo=opcional("actividad_codigo"),
         categoria_monotributo=opcional("categoria_monotributo"),
         provincia=opcional("provincia"),
         localidad=opcional("localidad"),
@@ -125,6 +128,63 @@ COLUMNAS_RESPALDOS = [
     "cliente_id", "tipo", "emitido", "monto", "periodicidad",
     "periodo_desde", "periodo_hasta", "vence", "referencia",
 ]
+
+
+COLUMNAS_ARCA = [
+    "cliente_id", "cuit", "consultado", "condicion_iva",
+    "categoria_monotributo", "actividad_codigo", "actividad_descripcion",
+]
+
+
+def leer_arca(ruta: str | Path,
+              registro: RegistroLegajos | None = None) -> RegistroLegajos:
+    """Importa constancias de inscripcion de ARCA desde un archivo.
+
+    ARCA no publica una API gratuita para esto. El web service oficial
+    `ws_sr_constancia_inscripcion` pide certificado digital de la entidad, y la
+    consulta publica de seti.afip.gob.ar tiene captcha. Asi que se importa el
+    archivo que baja el analista, igual que con los informes comerciales.
+
+    Cada fila produce una constatacion por campo, con origen ARCA y la fecha de
+    consulta. No pisa lo declarado en el padron: el padron sigue siendo lo que
+    dijo el cliente, y esto es lo que se pudo verificar. Compararlos es lo que
+    produce la discrepancia.
+
+    `registro` permite acumular sobre el mismo legajo donde ya estan los
+    respaldos, en vez de tener dos registros paralelos por cliente.
+    """
+    registro = registro if registro is not None else RegistroLegajos()
+
+    for fila in _leer_tabla(Path(ruta)):
+        cliente_id = (fila.get("cliente_id") or "").strip()
+        consultado = _fecha_iso(fila.get("consultado") or "")
+        if not cliente_id or consultado is None:
+            # Sin fecha de consulta el dato no se puede fechar, y una
+            # constatacion sin fecha no dice nada: puede ser de hoy o de hace
+            # dos anios.
+            continue
+
+        cuit = (fila.get("cuit") or "").strip()
+        legajo = registro.de(cliente_id)
+
+        for campo, columna in (
+            (Campo.CONDICION_IVA, "condicion_iva"),
+            (Campo.ACTIVIDAD_CODIGO, "actividad_codigo"),
+            (Campo.ACTIVIDAD, "actividad_descripcion"),
+        ):
+            valor = (fila.get(columna) or "").strip()
+            if not valor:
+                continue
+            legajo.constatar(Constatacion(
+                cliente_id=cliente_id,
+                campo=campo,
+                valor=valor,
+                origen=Origen.ARCA,
+                fecha_consulta=consultado,
+                referencia=f"constancia de inscripcion CUIT {cuit}" if cuit else "",
+            ))
+
+    return registro
 
 
 def leer_respaldos(ruta: str | Path) -> RegistroLegajos:

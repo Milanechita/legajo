@@ -226,6 +226,12 @@ class Cliente:
     # su actividad en palabras, no en codigo CLAE. El codigo lo trae ARCA y
     # por ahora vive como constatacion, no como declaracion.
     condicion_iva: str | None = None        # RI | MONOTRIBUTO | EXENTO | CF
+    # Codigo de actividad CLAE tal como figuraba en la constancia de ARCA al
+    # momento del alta. No es una declaracion en palabras del cliente: es lo
+    # que el analista transcribio del papel. Por eso se puede comparar de forma
+    # exacta contra lo que ARCA diga hoy, y la diferencia significa que el
+    # cliente cambio de actividad y no lo informo.
+    actividad_codigo: str | None = None
     categoria_monotributo: str | None = None
     provincia: str | None = None
     localidad: str | None = None
