@@ -33,7 +33,7 @@ from .matriz import MATRIZ_POR_DEFECTO
 from .modelo import Caso, Cliente, Estado
 from .operaciones import Operatoria, Perfil, agrupar
 from .pep import RegistroPEP
-from .riesgo import Evaluacion, evaluar_casos
+from .riesgo import Evaluacion, evaluar_casos, reevaluar_casos
 from .sanciones import Exposicion, estimar
 from .screening import Coincidencia, ResultadoScreening, screenear
 from .societaria import Estructura
@@ -84,6 +84,7 @@ def correr(
     perfiles: str | Path | None = None,
     respaldos: str | Path | None = None,
     arca: str | Path | None = None,
+    bcra_irregulares: set[str] | None = None,
     umbral_reporte: float | None = None,
     actor: str = "sistema/legajo",
     avisar: Any = None,
@@ -282,6 +283,42 @@ def correr(
             norma=c.norma, plazo="24 horas",
             reserva="prohibido informar al cliente",
         )
+
+    # --- Recalculo del riesgo, item 3.6 ---
+    # Se evalua entero de nuevo con los datos vigentes, no se apilan elevadores
+    # sobre el resultado anterior: apilar seria un trinquete que nunca vuelve
+    # atras, y un cliente que mejoro su situacion en el BCRA o que presento el
+    # documento que faltaba quedaria en ALTO para siempre.
+    congelados = {c.cliente_id for c in congelamientos}
+    cambiaron_actividad: set[str] = set()
+    if registro_legajos is not None:
+        from .procedencia import Campo
+        for cliente in clientes:
+            legajo = registro_legajos.de(cliente.cliente_id)
+            if any(c.campo is Campo.ACTIVIDAD_CODIGO
+                   for c in legajo.hallazgos(cliente)):
+                cambiaron_actividad.add(cliente.cliente_id)
+
+    antes = {cid: ev.nivel for cid, ev in evaluaciones.items()}
+    evaluaciones = reevaluar_casos(
+        casos, evaluaciones,
+        resoluciones=resoluciones,
+        coincidencias=por_cliente,
+        registro_pep=registro_pep,
+        alertas=alertas,
+        congelados=congelados,
+        bcra_irregulares=bcra_irregulares or set(),
+        actividades_cambiadas=cambiaron_actividad,
+        umbral_probable=politica.umbral_probable,
+        actor=actor,
+    )
+    movidos = [cid for cid, ev in evaluaciones.items()
+               if antes.get(cid) and antes[cid] != ev.nivel]
+    if movidos:
+        decir(f"\n  Riesgo recalculado: {len(movidos)} cliente(s) cambiaron de nivel")
+        for cid in sorted(movidos):
+            decir(f"    {cid}  {antes[cid]} -> {evaluaciones[cid].nivel}"
+                  f"   revision cada {evaluaciones[cid].meses_hasta_revision} meses")
 
     sin_perfil = [cid for cid, lista in alertas.items()
                   if any(a.codigo == "SIN_PERFIL" for a in lista)]

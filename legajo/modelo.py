@@ -248,6 +248,14 @@ class Cliente:
     es_sujeto_obligado: bool = False        # declarado, Ley 25.246 art. 20
 
 
+def _mismo_analisis(a, b) -> bool:
+    """Si dos evaluaciones dicen lo mismo, incluido el porque."""
+    return (a.nivel == b.nivel
+            and a.puntaje == b.puntaje
+            and list(a.elevadores) == list(b.elevadores)
+            and [f.codigo for f in a.factores] == [f.codigo for f in b.factores])
+
+
 @dataclass
 class Caso:
     """Un cliente atravesando el circuito.
@@ -259,6 +267,10 @@ class Caso:
     cliente: Cliente
     estado: Estado = Estado.ALTA
     evidencia: list[Evidencia] = field(default_factory=list)
+    # La evaluacion de riesgo vigente. Se escribe unicamente desde
+    # `reevaluar`, que ademas la asienta en la evidencia. Es la misma relacion
+    # que hay entre `estado` y `transicionar`.
+    evaluacion: Any = None
 
     def registrar(self, actor: str, accion: str, **detalle: Any) -> Evidencia:
         """Agrega una entrada al expediente."""
@@ -287,6 +299,44 @@ class Caso:
             destino=destino.value,
             motivo=motivo,
         )
+
+    def reevaluar(self, evaluacion, actor: str, motivo: str) -> bool:
+        """Reemplaza la evaluacion de riesgo vigente y lo deja asentado.
+
+        Misma forma que `transicionar`: el valor actual y el registro se
+        escriben juntos, asi que no hay manera de cambiar uno sin el otro. Por
+        eso el riesgo no necesita un campo paralelo ni un segundo puntaje. El
+        vigente es este, y el del alta sigue entero en el expediente para
+        cuando una inspeccion pregunte por que el cliente entro como BAJO.
+
+        Devuelve False y no escribe nada cuando el resultado no cambio.
+        Apendear una evaluacion identica en cada corrida convertiria el
+        expediente en un latido en vez de un registro de cambios, que es el
+        mismo motivo por el que `transicionar` rechaza ir al estado actual.
+        """
+        # La comparacion incluye el porque y no solo el resultado. Un cliente
+        # que sigue en ALTO pero por otro motivo cambio: si solo se miraran el
+        # nivel y el puntaje, el expediente y el informe seguirian diciendo
+        # que esta en ALTO por su situacion en el BCRA cuando el BCRA ya esta
+        # limpio y lo que cambio es la actividad. El analista iria a mirar el
+        # lugar equivocado.
+        anterior = self.evaluacion
+        if anterior is not None and _mismo_analisis(anterior, evaluacion):
+            return False
+
+        self.evaluacion = evaluacion
+        self.registrar(
+            actor,
+            "REEVALUACION_EBR",
+            nivel_anterior=anterior.nivel if anterior else "",
+            nivel=evaluacion.nivel,
+            puntaje_anterior=anterior.puntaje if anterior else "",
+            puntaje=evaluacion.puntaje,
+            regimen=evaluacion.regimen,
+            elevadores=list(evaluacion.elevadores),
+            motivo=motivo,
+        )
+        return True
 
     @property
     def abierto(self) -> bool:

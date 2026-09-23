@@ -56,6 +56,10 @@ resultado. Esta es la tabla completa, para consulta.
 | Los hallazgos y las diferencias para leer van separados | Mezclarlos ahoga a los que el programa sí puede afirmar. El expediente recibe `DISCREPANCIA_CONSTATADA` y `DIFERENCIA_PARA_LEER` como entradas distintas |
 | El código de actividad se compara por sus dígitos | ARCA escribe el mismo código de varias formas: "620100", "62.01.00", "620100 - Servicios de...". Quedarse con los dígitos evita una discrepancia falsa por cómo vino el papel |
 | ARCA se importa desde archivo, no por API | No hay API pública gratuita. El web service oficial pide certificado digital de la entidad y la consulta pública tiene captcha. Mismo patrón que los informes comerciales |
+| El riesgo no necesita un mecanismo propio | `Caso.estado` ya es un campo actual que solo cambia desde `transicionar`, que siempre apendea. `reevaluar` tiene la misma forma. No hacen falta dos puntajes: el vigente es uno y el del alta sigue en el expediente |
+| La reevaluación recalcula entero, no apila | Apilar elevadores sería un trinquete: un cliente que mejoró su situación en el BCRA o presentó el documento que faltaba quedaría en ALTO para siempre |
+| Los hallazgos del monitoreo elevan, no suman puntos | Ponderarlos exigiría inventar cuánto vale una alerta. El costo es que no gradúa: un cliente con una alerta queda igual que uno con cinco |
+| Seguir en ALTO por otro motivo cuenta como cambio | Si la comparación mirara solo nivel y puntaje, el informe seguiría diciendo que el cliente está en ALTO por el BCRA cuando el BCRA ya está limpio. El analista iría a mirar el lugar equivocado |
 | `io_planilla.py` no se refactoriza por ahora | Funciona y no es superficie visible. Crece mal, pero reescribir lo que no rompe nada tiene costo y no tiene beneficio |
 
 El screening contra listas no se elimina aunque baje de protagonismo: sigue
@@ -87,6 +91,7 @@ tanto el programa hace lo más conservador y lo dice.
 | Marca | Qué | Dónde | Qué decide |
 |---|---|---|---|
 | SIN CALIBRAR | `factor_monotributo_grave` = 2.0 | `config.py`, `alertas.py` | Si `MONOTRIBUTO_EXCEDIDO` sale MEDIA o ALTA. Sale de razonar, no de medir. Es la severidad que el analista mira primero: si está mal, entierra casos graves entre los medios o llena de ALTA lo que no lo es |
+| SIN CALIBRAR | `ACTIVIDAD_CAMBIADA_SIN_INFORMAR` | `matriz.py` | Es el más blando de los cuatro elevadores del recálculo. Los otros tres salen de hechos duros: una obligación de congelamiento, un corte normativo o la clasificación del BCRA. Un cambio de código CLAE puede ser una recategorización administrativa y no un cambio de negocio. Revisar en 7.1 |
 | PENDIENTE DE POLÍTICA | Antigüedad de los respaldos | `capacidad.py` | Si un respaldo de 2019 pesa igual que uno de este mes al comparar contra lo operado. Hoy pesan igual y la fecha se expone en vez de aplicarse. Si hace falta ponderar, tiene que ser explícito y no un filtro silencioso adentro del cálculo |
 
 Las dos se resuelven en el ítem 7.1. El aviso va en el código, en el lugar

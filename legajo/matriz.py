@@ -172,6 +172,14 @@ class MatrizRiesgo:
         "PEP_EXTRANJERA",
         "BENEFICIARIO_NO_IDENTIFICADO",
         "JURISDICCION_ALTO_RIESGO",
+        # Los cuatro de abajo salen del monitoreo y de las fuentes externas,
+        # asi que solo existen en la reevaluacion del item 3.6. Entran como
+        # elevadores y no como puntos porque ponderarlos exigiria inventar
+        # cuanto vale cada uno, y el proyecto ya tiene dos cortes sin calibrar.
+        "CONGELAMIENTO_REQUERIDO",
+        "CAPACIDAD_EXCEDIDA",
+        "SITUACION_BCRA_IRREGULAR",
+        "ACTIVIDAD_CAMBIADA_SIN_INFORMAR",
     })
 
     jurisdicciones_contramedidas: frozenset[str] = GAFI_CONTRAMEDIDAS

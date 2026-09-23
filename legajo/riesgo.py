@@ -253,6 +253,45 @@ def _factores_control(
     )
 
 
+def _factores_monitoreo(
+    alertas: list | None,
+    congelado: bool,
+    bcra_irregular: bool,
+    actividad_cambiada: bool,
+) -> tuple[list[Factor], list[str]]:
+    """Elevadores que salen del monitoreo y de las fuentes externas.
+
+    Devuelven elevadores y ningun factor con puntos. Ponderarlos exigiria
+    decidir cuanto vale una alerta, y ese numero no sale de ninguna norma ni de
+    ninguna medicion. Un elevador es binario: o el hecho esta o no esta.
+
+    El costo de esa decision es que no gradua. Un cliente con una sola alerta
+    de capacidad excedida queda igual que uno con cinco. Se acepta a cambio de
+    no meter un tercer corte elegido a ojo.
+
+    Nada de esto entra en la evaluacion del alta: en ese momento todavia no
+    corrio el monitoreo. Son entradas de la reevaluacion del item 3.6.
+    """
+    elevadores: list[str] = []
+
+    if congelado:
+        elevadores.append("CONGELAMIENTO_REQUERIDO")
+
+    # Solo la severidad ALTA, cuyo corte es normativo: sale del umbral de
+    # reporte. Las MEDIA tienen un corte discutible y elevarian por ruido.
+    if any(a.codigo == "CAPACIDAD_EXCEDIDA" and a.severidad == "ALTA"
+           for a in (alertas or [])):
+        elevadores.append("CAPACIDAD_EXCEDIDA")
+
+    if bcra_irregular:
+        elevadores.append("SITUACION_BCRA_IRREGULAR")
+
+    if actividad_cambiada:
+        elevadores.append("ACTIVIDAD_CAMBIADA_SIN_INFORMAR")
+
+    return [], elevadores
+
+
 def evaluar(
     cliente: Cliente,
     *,
@@ -262,8 +301,21 @@ def evaluar(
     canal_no_presencial: bool = False,
     umbral_probable: float = 92.0,
     matriz: MatrizRiesgo = MATRIZ_POR_DEFECTO,
+    # Entradas que solo existen despues del monitoreo. En la evaluacion del
+    # alta van todas en falso, porque todavia no corrio nada de eso.
+    alertas: list | None = None,
+    congelado: bool = False,
+    bcra_irregular: bool = False,
+    actividad_cambiada: bool = False,
 ) -> Evaluacion:
-    """Calcula el nivel de riesgo y el regimen de diligencia correspondiente."""
+    """Calcula el nivel de riesgo y el regimen de diligencia correspondiente.
+
+    Se calcula entero cada vez, con los datos vigentes. La reevaluacion del
+    item 3.6 llama a esta misma funcion y no apila elevadores sobre el
+    resultado anterior: si lo hiciera seria un trinquete que nunca vuelve
+    atras, y un cliente que mejoro su situacion en el BCRA o que presento el
+    documento que faltaba quedaria en ALTO para siempre.
+    """
     factores: list[Factor] = []
     elevadores: list[str] = []
 
@@ -299,6 +351,11 @@ def evaluar(
     factores += f
     elevadores += e
 
+    f, e = _factores_monitoreo(alertas, congelado, bcra_irregular,
+                               actividad_cambiada)
+    factores += f
+    elevadores += e
+
     puntaje = round(sum(x.puntos for x in factores), 1)
     nivel = _nivel_por_puntaje(puntaje, matriz)
 
@@ -315,6 +372,76 @@ def evaluar(
         factores=factores,
         elevadores=aplicados,
     )
+
+
+def reevaluar_casos(
+    casos: list[Caso],
+    evaluaciones: dict[str, Evaluacion],
+    *,
+    resoluciones: dict[str, Resolucion] | None = None,
+    coincidencias: dict[str, list[Coincidencia]] | None = None,
+    registro_pep: RegistroPEP | None = None,
+    alertas: dict[str, list] | None = None,
+    congelados: set[str] | None = None,
+    bcra_irregulares: set[str] | None = None,
+    actividades_cambiadas: set[str] | None = None,
+    umbral_probable: float = 92.0,
+    matriz: MatrizRiesgo = MATRIZ_POR_DEFECTO,
+    actor: str = "sistema/riesgo",
+) -> dict[str, Evaluacion]:
+    """Vuelve a evaluar el riesgo con lo que encontraron el monitoreo y las
+    fuentes externas. Item 3.6.
+
+    No reusa `evaluar_casos` porque esa funcion saltea todo caso que no este en
+    SCORING, y despues del monitoreo los casos estan en ANALISIS. Tampoco
+    deberia scorear a los escalados: un caso que se escalo por coincidencia en
+    lista critica no baja a un tramo porque el monitoreo salio limpio.
+
+    Solo se reevalua a los clientes con algo nuevo. Recalcular a uno sin
+    hallazgos da el mismo resultado, y `Caso.reevaluar` no escribiria nada
+    igual, pero recorrer el padron entero por nada no tiene sentido.
+    """
+    alertas = alertas or {}
+    congelados = congelados or set()
+    bcra_irregulares = bcra_irregulares or set()
+    actividades_cambiadas = actividades_cambiadas or set()
+
+    # Una lista de alertas vacia no es un hallazgo. `monitorear` no deja
+    # entradas vacias, pero si alguien arma el diccionario a mano, un cliente
+    # sin alertas no tiene que entrar a la reevaluacion.
+    con_alertas = {cid for cid, lista in alertas.items() if lista}
+    afectados = (con_alertas | congelados | bcra_irregulares
+                 | actividades_cambiadas)
+    if not afectados:
+        return evaluaciones
+
+    resultado = dict(evaluaciones)
+    for caso in casos:
+        cliente_id = caso.cliente.cliente_id
+        if cliente_id not in afectados:
+            continue
+        if caso.estado is Estado.ESCALADO:
+            continue
+
+        nueva = evaluar(
+            caso.cliente,
+            resolucion=(resoluciones or {}).get(cliente_id),
+            coincidencias=(coincidencias or {}).get(cliente_id),
+            pep=registro_pep.consultar(cliente_id) if registro_pep else None,
+            umbral_probable=umbral_probable,
+            matriz=matriz,
+            alertas=alertas.get(cliente_id),
+            congelado=cliente_id in congelados,
+            bcra_irregular=cliente_id in bcra_irregulares,
+            actividad_cambiada=cliente_id in actividades_cambiadas,
+        )
+
+        anterior = resultado.get(cliente_id)
+        caso.evaluacion = anterior
+        if caso.reevaluar(nueva, actor, "monitoreo y fuentes externas"):
+            resultado[cliente_id] = nueva
+
+    return resultado
 
 
 def evaluar_casos(
